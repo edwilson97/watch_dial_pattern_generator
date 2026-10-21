@@ -1,15 +1,3 @@
-## v4.2.4 — Fish Scales relief update
-
-- Replaced the old arc-ridge Fish Scales generator with true relief geometry.
-- Added three selectable Fish Scales styles: engraved, faceted, and rounded.
-- Added GUI/CLI support and regression tests for the new Fish Scales relief styles.
-
-## v4.2.3 — Asanoha multiple relief styles
-
-- Added three selectable Asanoha styles: engraved, faceted, and rounded.
-- Added GUI and CLI support for choosing the Asanoha style.
-- Added regression tests verifying the styles remain distinct and that relief styles produce meaningful mid-tone depth variation.
-
 # Watch Dial Pattern Generator v4
 
 A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 23 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied.
@@ -76,52 +64,6 @@ xvfb-run -a python3 run_tests.py
 The GUI test requires a working Tkinter installation and graphical display (or Xvfb).
 It is not a native macOS UI rendering test.
 
-## v4.2: refined pattern geometry
-
-The v4.2 release retains all 23 patterns and adds pattern-specific parameters:
-
-- **Hobnail:** `--top-width-mm` makes a mathematically flat truncated-pyramid apex (0 = pointed).
-- **Wave:** `--wave-meander-mm` controls lateral waviness independently from `--ridge-height-fraction` (0 = flat, 1 = full grayscale range).
-- **Annular Wave:** `--ridge-height-fraction` adjusts concentric ridge height.
-- **Grain d'Orge:** `--grain-aspect` adjusts grain elongation; `--amplitude` controls centerline curvature.
-- **Flamme:** `--flame-taper` progressively narrows flame ridges outward.
-- **Panier:** `--ribbon-curvature` independently controls woven ribbon bowing.
-- **Rosette:** `--rosette-harmonics` mixes the primary petal frequency with its second harmonic.
-
-All seven controls appear only when their pattern is selected in the GUI, are available from CLI, and are stored in the JSON metadata. These are mathematical stylizations, not guaranteed reproductions of historical engine-turning cutter trajectories. `depth_mm` remains target-depth metadata rather than a laser or CNC calibration.
-
-Example:
-
-```bash
-python3 dial_patterns.py --cli --pattern hobnail --pitch-mm 0.75 --top-width-mm 0.18 --output truncated_hobnail.png
-python3 dial_patterns.py --cli --pattern wave --pitch-mm 0.75 --wave-meander-mm 0.22 --ridge-height-fraction 0.6 --output wave.png
-```
-
-Run the expanded suite (including GUI interaction tests): `python3 run_tests.py` (on headless Linux: `xvfb-run -a python3 run_tests.py`).
-
-
-## v4.2.2 — Asanoha relief update
-
-- Changed Asanoha from a line-engraving-like pattern to a true faceted relief height map with sculpted surfaces between the grooves.
-- Retained controllable line width while adding meaningful Z variation across the non-groove cells.
-- Added regression tests to confirm the relief contains substantial mid-tone height variation beyond the groove network.
-
-## v4.2.1 — corrected geometric families
-
-- **Asanoha:** constructed from repeated hexagonal hemp-leaf line segments, including six radial arms, diagonal leaf ribs and perimeter connections. The `--line-width-mm` argument controls actual recessed stroke width.
-- **Isometric Cubes:** three rhombus faces tessellate a hexagonal cell. They occupy three distinct height terraces (no directional lighting). `--cube-gap-mm` controls recessed boundaries; `--cube-step-fraction` controls physical relative-height differences.
-- Both share a regular triangular tiling only; they no longer share the same synthetic wave-form algorithm.
-- New tests: `test_distinct_lattices.py` plus additional GUI field visibility checks.
-
-Examples:
-
-```sh
-python3 dial_patterns.py --cli --pattern asanoha --pitch-mm .8 --line-width-mm .055 --output asanoha.png
-python3 dial_patterns.py --cli --pattern isometriccubes --pitch-mm .8 --cube-gap-mm .04 --cube-step-fraction .28 --output cubes.png
-```
-
-Note: The stepped cube surfaces are actual height terraces; the resulting physical relief will not appear identical to a conventionally shaded 3D cube graphic under all viewing conditions.
-
 ## v4.2.5 — Brick and Reset
 
 The Brick / Running Bond pattern uses exact millimeter-defined repeating rectangular
@@ -145,3 +87,60 @@ python3 dial_patterns.py --cli --pattern brick --brick-width-mm 1.2 \
 
 Use `python3 run_tests.py` to run the expanded regression and GUI test suite.
 Grayscale denotes relative height, not a calibrated laser-removal depth.
+
+## v4.2.4 — Fish Scales relief update
+
+- Replaced the old arc-ridge Fish Scales generator with true relief geometry.
+- Added three selectable Fish Scales styles: engraved, faceted, and rounded.
+- Added GUI/CLI support and regression tests for the new Fish Scales relief styles.
+
+## v4.2.3 — Asanoha multiple relief styles
+
+- Added three selectable Asanoha styles: engraved, faceted, and rounded.
+- Added GUI and CLI support for choosing the Asanoha style.
+- Added regression tests verifying the styles remain distinct and that relief styles produce meaningful mid-tone depth variation.
+
+## v4.2.2 — Asanoha relief update
+
+- Changed Asanoha from a line-engraving-like pattern to a true faceted relief height map with sculpted surfaces between the grooves.
+- Retained controllable line width while adding meaningful Z variation across the non-groove cells.
+- Added regression tests to confirm the relief contains substantial mid-tone height variation beyond the groove network.
+
+## v4.2.1 — corrected geometric families
+
+- **Asanoha:** constructed from repeated hexagonal hemp-leaf line segments, including six radial arms, diagonal leaf ribs and perimeter connections. The `--line-width-mm` argument controls actual recessed stroke width.
+- **Isometric Cubes:** three rhombus faces tessellate a hexagonal cell. They occupy three distinct height terraces (no directional lighting). `--cube-gap-mm` controls recessed boundaries; `--cube-step-fraction` controls physical relative-height differences.
+- Both share a regular triangular tiling only; they no longer share the same synthetic wave-form algorithm.
+- New tests: `test_distinct_lattices.py` plus additional GUI field visibility checks.
+
+Examples:
+
+```sh
+python3 dial_patterns.py --cli --pattern asanoha --pitch-mm .8 --line-width-mm .055 --output asanoha.png
+python3 dial_patterns.py --cli --pattern isometriccubes --pitch-mm .8 --cube-gap-mm .04 --cube-step-fraction .28 --output cubes.png
+```
+
+Note: The stepped cube surfaces are actual height terraces; the resulting physical relief will not appear identical to a conventionally shaded 3D cube graphic under all viewing conditions.
+
+## v4.2: refined pattern geometry
+
+The v4.2 release retains all 23 patterns and adds pattern-specific parameters:
+
+- **Hobnail:** `--top-width-mm` makes a mathematically flat truncated-pyramid apex (0 = pointed).
+- **Wave:** `--wave-meander-mm` controls lateral waviness independently from `--ridge-height-fraction` (0 = flat, 1 = full grayscale range).
+- **Annular Wave:** `--ridge-height-fraction` adjusts concentric ridge height.
+- **Grain d'Orge:** `--grain-aspect` adjusts grain elongation; `--amplitude` controls centerline curvature.
+- **Flamme:** `--flame-taper` progressively narrows flame ridges outward.
+- **Panier:** `--ribbon-curvature` independently controls woven ribbon bowing.
+- **Rosette:** `--rosette-harmonics` mixes the primary petal frequency with its second harmonic.
+
+All seven controls appear only when their pattern is selected in the GUI, are available from CLI, and are stored in the JSON metadata. These are mathematical stylizations, not guaranteed reproductions of historical engine-turning cutter trajectories. `depth_mm` remains target-depth metadata rather than a laser or CNC calibration.
+
+Example:
+
+```bash
+python3 dial_patterns.py --cli --pattern hobnail --pitch-mm 0.75 --top-width-mm 0.18 --output truncated_hobnail.png
+python3 dial_patterns.py --cli --pattern wave --pitch-mm 0.75 --wave-meander-mm 0.22 --ridge-height-fraction 0.6 --output wave.png
+```
+
+Run the expanded suite (including GUI interaction tests): `python3 run_tests.py` (on headless Linux: `xvfb-run -a python3 run_tests.py`).
