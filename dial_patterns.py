@@ -1,0 +1,776 @@
+#!/usr/bin/env python3
+"""Mathematical watch dial displacement map generator (CLI + Tkinter GUI).
+
+Dependencies: numpy, Pillow; Tkinter is part of most desktop Python distributions.
+Height is stored as pixel brightness, never as simulated lighting.
+"""
+import argparse
+import json
+import math
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageTk
+
+PATTERNS = {
+    'hobnail': 'Clous de Paris / Hobnail',
+    'barleycorn': 'Barleycorn (stylized guilloché)',
+    'sunburst': 'Sunburst (radial grooves)',
+    'basketweave': 'Basket Weave',
+    'tapisserie': 'Tapisserie (square relief)',
+    'fishscales': 'Fish Scales',
+    'flinque': 'Flinqué (radiating waves)',
+    'wave': 'Wave (parallel sinusoidal ridges)',
+    'annularwave': 'Annular Wave (concentric ripples)',
+    'graindorge': 'Grain d’Orge (interlaced grains)',
+    'flamme': 'Flamme (radial flames)',
+    'panier': 'Panier (curved woven ribbons)',
+    'escargot': 'Escargot (spiral grooves)',
+    'moire': 'Moiré (interference waves)',
+    'chevron': 'Chevron / Herringbone',
+    'rosette': 'Rosette (radial petals)',
+    'sectorrings': 'Sector Rings (segmented annuli)',
+    'honeycomb': 'Honeycomb (hexagonal cells)',
+    'perlage': 'Perlage (circular graining)',
+    'diamondlattice': 'Diamond Lattice',
+    'isometriccubes': 'Isometric Cubes',
+    'fanscallop': 'Fan / Scallop',
+    'asanoha': 'Asanoha (hemp leaf geometry)',
+    'brick': 'Brick / Running Bond',
+
+}
+
+ENUM_FIELDS = {
+    'asanoha_style': ('faceted', 'rounded', 'engraved'),
+    'fishscales_style': ('rounded', 'faceted', 'engraved'),
+    'brick_style': ('faceted', 'engraved', 'rounded'),
+}
+
+
+def _hex_cell_coordinates(u, v):
+    """Closest pointy-hex centers on a triangular lattice (pitch = X spacing).
+
+    Returns physical-size-independent local coordinates in units of pitch.
+    The mesh is regular, with cell circumradius = pitch / sqrt(3).
+    """
+    xx, yy = np.broadcast_arrays(u, v)
+    best = np.full(xx.shape, np.inf, dtype=np.float32)
+    local_x = np.zeros(xx.shape, dtype=np.float32)
+    local_y = np.zeros(xx.shape, dtype=np.float32)
+    row0 = np.floor(yy / (np.sqrt(3) / 2) + .5).astype(np.int32)
+    for dr in (-1, 0, 1):
+        row = row0 + dr
+        shift = .5 * np.mod(row, 2)
+        col0 = np.floor(xx - shift + .5)
+        for dc in (-1, 0, 1):
+            cx = col0 + dc + shift
+            cy = row * (np.sqrt(3) / 2)
+            dx, dy = xx - cx, yy - cy
+            dist2 = dx * dx + dy * dy
+            mask = dist2 < best
+            best = np.where(mask, dist2, best)
+            local_x = np.where(mask, dx, local_x)
+            local_y = np.where(mask, dy, local_y)
+    return local_x, local_y
+
+
+def _segment_distance(px, py, ax, ay, bx, by):
+    dx, dy = bx - ax, by - ay
+    t = np.clip(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0, 1)
+    return np.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _hex_vertices():
+    radius = 1 / math.sqrt(3)
+    angles = np.pi / 2 + np.arange(6) * np.pi / 3
+    return np.stack((radius * np.cos(angles), radius * np.sin(angles)), axis=1)
+
+
+def _asanoha_height(u, v, pitch_mm, line_width_mm, style='faceted'):
+    """Asanoha relief styles.
+
+    engraved: flat surface with recessed hemp-leaf grooves.
+    faceted: sculpted wedge-like facets between grooves.
+    rounded: softer domed relief between grooves.
+    """
+    xx, yy = _hex_cell_coordinates(u, v)
+    vertices = _hex_vertices()
+    radius = 1 / math.sqrt(3)
+
+    distance = np.full(xx.shape, np.inf, dtype=np.float32)
+    for i in range(6):
+        a = vertices[i]
+        b = vertices[(i + 1) % 6]
+        segments = ((0, 0, a[0], a[1]),
+                    (a[0] * 0.38, a[1] * 0.38, b[0] * 0.78, b[1] * 0.78),
+                    (a[0] * 0.78, a[1] * 0.78, b[0] * 0.38, b[1] * 0.38),
+                    (a[0], a[1], b[0], b[1]))
+        for x1, y1, x2, y2 in segments:
+            distance = np.minimum(distance, _segment_distance(xx, yy, x1, y1, x2, y2))
+
+    half_width = line_width_mm / (2 * pitch_mm)
+    groove_mask = np.clip((distance - half_width * 0.45) / max(half_width * 0.95, 1e-6), 0, 1)
+
+    if style == 'engraved':
+        return groove_mask
+
+    theta = np.mod(np.arctan2(yy, xx) - np.pi / 2, 2 * np.pi)
+    wedge_angle = np.pi / 3
+    local_ang = np.abs(np.mod(theta + wedge_angle / 2, wedge_angle) - wedge_angle / 2) / (wedge_angle / 2)
+    r = np.sqrt(xx * xx + yy * yy)
+    rnorm = np.clip(r / radius, 0, 1)
+
+    g1 = 1 - 2 * np.abs(np.mod(xx + 0.5, 1.0) - 0.5)
+    g2 = 1 - 2 * np.abs(np.mod(0.5 * xx + 0.8660254 * yy + 0.5, 1.0) - 0.5)
+    g3 = 1 - 2 * np.abs(np.mod(-0.5 * xx + 0.8660254 * yy + 0.5, 1.0) - 0.5)
+    support = np.clip((g1 + g2 + g3) / 3.0, 0, 1)
+
+    if style == 'faceted':
+        radial_peak = np.clip(1 - np.abs(rnorm - 0.64) / 0.34, 0, 1)
+        wedge_profile = np.clip(1 - local_ang**1.15, 0, 1)
+        petal = wedge_profile * radial_peak
+        relief = np.clip(0.18 + 0.62 * support + 0.42 * petal, 0, 1)
+    elif style == 'rounded':
+        petal = np.exp(-((rnorm - 0.62) / 0.23) ** 2) * np.clip(np.cos(local_ang * np.pi / 2), 0, 1) ** 1.8
+        support_round = np.sqrt(np.clip(support, 0, 1))
+        relief = np.clip(0.10 + 0.52 * support_round + 0.55 * petal, 0, 1)
+    else:
+        raise ValueError("Asanoha style must be one of: faceted, rounded, engraved")
+
+    h = np.clip(groove_mask * relief, 0, 1)
+    peak = np.max(h)
+    if peak > 1e-6:
+        h = h / peak
+    return h
+
+
+def _cube_height(u, v, pitch_mm, cube_gap_mm, cube_step_fraction):
+    """Rhombille tiling: three flat rhombi per hexagon, at real Z terraces."""
+    xx, yy = _hex_cell_coordinates(u, v)
+    vertices = _hex_vertices()
+    # Each face occupies a 120-degree sector; its edges run from the
+    # cell center to alternating vertices. These are 3 true rhombi.
+    theta = np.mod(np.arctan2(yy, xx) - np.pi / 2, 2 * np.pi)
+    sector = np.floor(theta / (2 * np.pi / 3)).astype(np.int32) % 3
+    heights = np.array([1.0, 1.0 - cube_step_fraction, 1.0 - 2 * cube_step_fraction], dtype=np.float32)
+    face = heights[sector]
+    distance = np.full(xx.shape, np.inf, dtype=np.float32)
+    for i in (0, 2, 4):
+        vx, vy = vertices[i]
+        distance = np.minimum(distance, _segment_distance(xx, yy, 0, 0, vx, vy))
+    for i in range(6):
+        a, b = vertices[i], vertices[(i + 1) % 6]
+        distance = np.minimum(distance, _segment_distance(xx, yy, a[0], a[1], b[0], b[1]))
+    half_gap = cube_gap_mm / (2 * pitch_mm)
+    groove_transition = np.clip((distance - half_gap * .6) / max(half_gap * .8, 1e-6), 0, 1)
+    return face * groove_transition
+
+
+
+def _fishscales_height(u, v, style='rounded', softness=0.0):
+    """Fish scales with three relief styles.
+
+    engraved: mostly flat scales separated by recessed arc grooves.
+    faceted: plate-like scales with planar relief toward a central ridge.
+    rounded: convex scales with domed interiors.
+    """
+    row = np.floor(v).astype(np.int32)
+    x = np.mod(u + 0.5 * (row % 2), 1.0) - 0.5
+    y = np.mod(v, 1.0)
+
+    r = 0.95
+    safe = np.sqrt(np.maximum(r * r - x * x, 0.0))
+    y_arc = 1.0 - safe
+    boundary_dist = np.abs(y - y_arc)
+    groove_soft = 0.018 + 0.08 * softness
+    groove_mask = np.clip((boundary_dist - groove_soft * 0.55) / max(groove_soft * 0.95, 1e-6), 0, 1)
+
+    # Also taper slightly toward the left/right sides so scales read as individual bodies.
+    side = np.clip(1 - (np.abs(x) / 0.5) ** (1.2 if style == 'rounded' else 1.0), 0, 1)
+    depth = np.clip((y - y_arc) / np.maximum(1 - y_arc, 1e-6), 0, 1)
+
+    if style == 'engraved':
+        return groove_mask
+    elif style == 'faceted':
+        ridge = np.clip(1 - np.abs(depth - 0.62) / 0.62, 0, 1)
+        plate = np.minimum(side, ridge)
+        relief = 0.18 + 0.82 * plate
+    elif style == 'rounded':
+        dome_x = (x / 0.46) ** 2
+        dome_y = ((depth - 0.60) / 0.55) ** 2
+        dome = np.clip(1 - dome_x - dome_y, 0, 1)
+        relief = np.clip(0.12 + 0.38 * np.sqrt(np.clip(side, 0, 1)) + 0.62 * dome, 0, 1)
+    else:
+        raise ValueError('Fish scales style must be one of: ' + ', '.join(ENUM_FIELDS['fishscales_style']))
+
+    h = np.clip(groove_mask * relief, 0, 1)
+    peak = np.max(h)
+    if peak > 1e-6:
+        h = h / peak
+    return h
+
+
+def _brick_height(u_mm, v_mm, width_mm, height_mm, joint_mm, bevel_mm, stagger, style):
+    """Repeatable running-bond rectangular displacement geometry, no illumination.
+
+    u_mm/v_mm are physically rotated coordinates. 50% offset means successive
+    rows alternate by half a brick. Joint thickness is shared between bricks.
+    """
+    row = np.floor(v_mm / height_mm).astype(np.int64)
+    # Alternating stagger; a full cycle every two courses.
+    shift = (row % 2) * stagger * width_mm
+    local_x = np.mod(u_mm - shift, width_mm)
+    local_y = np.mod(v_mm, height_mm)
+    edge_x = np.minimum(local_x, width_mm - local_x)
+    edge_y = np.minimum(local_y, height_mm - local_y)
+    # Distance from closest edge, in real physical millimeters.
+    edge = np.minimum(edge_x, edge_y)
+    d = edge - joint_mm / 2
+    if style == 'engraved':
+        return (d >= 0).astype(np.float32)
+    if style == 'faceted':
+        if bevel_mm == 0:
+            return (d >= 0).astype(np.float32)
+        return np.clip(d / bevel_mm, 0, 1).astype(np.float32)
+    if style == 'rounded':
+        # Smoothly curved pillowed interior: no flat plateau except at the apex.
+        rx = np.clip((edge_x - joint_mm / 2) / ((width_mm - joint_mm) / 2), 0, 1)
+        ry = np.clip((edge_y - joint_mm / 2) / ((height_mm - joint_mm) / 2), 0, 1)
+        return np.clip(np.sin(np.pi * rx / 2) * np.sin(np.pi * ry / 2), 0, 1).astype(np.float32)
+    raise ValueError('Unknown brick style')
+
+
+def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
+           depth_mm=0.15, rotation=0.0, phase=0.0, softness=0.0,
+           invert=False, circular=False, background=0.0, grooves=96,
+           groove_width_mm=0.20, bevel_width_mm=0.08, top_width_mm=0.0, wave_meander_mm=0.0,
+           ridge_height_fraction=1.0, grain_aspect=2.0, flame_taper=0.5,
+           ribbon_curvature=0.35, rosette_harmonics=0.0, amplitude=0.35,
+           secondary_pitch_mm=1.2, angle_deg=60.0, segments=12,
+           line_width_mm=0.055, cube_gap_mm=0.04, cube_step_fraction=0.28, asanoha_style='faceted', fishscales_style='rounded', brick_width_mm=1.20, brick_height_mm=0.60,
+           brick_joint_mm=0.10, brick_bevel_mm=0.08, brick_row_offset=0.50, brick_style='faceted'):
+    """Return uint16 height map and metadata. White = high, black = low.
+
+    depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
+    """
+    if pattern not in PATTERNS:
+        raise ValueError('Unknown pattern: ' + pattern)
+    if not 128 <= pixels <= 8192:
+        raise ValueError('pixels must be between 128 and 8192')
+    if size_mm <= 0 or pitch_mm <= 0 or depth_mm <= 0:
+        raise ValueError('size, pitch and depth must be positive')
+    if not 0 <= softness <= 1:
+        raise ValueError('softness must be between 0 and 1')
+    if secondary_pitch_mm <= 0 or not 0 <= amplitude <= 2 or segments < 2:
+        raise ValueError('secondary pitch must be positive, amplitude 0–2, segments >= 2')
+    if grooves < 4:
+        raise ValueError('grooves must be >= 4')
+    if pattern == 'tapisserie':
+        if not 0 <= groove_width_mm < pitch_mm:
+            raise ValueError('Tapisserie groove width must be >= 0 and less than pitch')
+        if bevel_width_mm < 0 or 2 * bevel_width_mm > pitch_mm - groove_width_mm:
+            raise ValueError('Bevel width must be >= 0 and <= half the raised square width')
+    if not 0 <= top_width_mm < pitch_mm:
+        raise ValueError('top width must be >= 0 and smaller than pitch')
+    if wave_meander_mm < 0 or not 0 <= ridge_height_fraction <= 1:
+        raise ValueError('wave meander must be nonnegative; ridge height fraction must be 0–1')
+    if grain_aspect < 1 or not 0 <= flame_taper <= 1 or not 0 <= ribbon_curvature <= 2 or not 0 <= rosette_harmonics <= 1:
+        raise ValueError('grain aspect >= 1; flame taper and rosette harmonics 0–1; ribbon curvature 0–2')
+    if line_width_mm <= 0 or line_width_mm >= pitch_mm / 2:
+        raise ValueError("Asanoha line width must be > 0 and < pitch / 2")
+    if cube_gap_mm <= 0 or cube_gap_mm >= pitch_mm / 2:
+        raise ValueError("Cube gap must be > 0 and < pitch / 2")
+    if not 0 < cube_step_fraction < .5:
+        raise ValueError("Cube step fraction must be > 0 and < 0.5")
+    if asanoha_style not in ENUM_FIELDS['asanoha_style']:
+        raise ValueError('Asanoha style must be one of: ' + ', '.join(ENUM_FIELDS['asanoha_style']))
+    if fishscales_style not in ENUM_FIELDS['fishscales_style']:
+        raise ValueError('Fish scales style must be one of: ' + ', '.join(ENUM_FIELDS['fishscales_style']))
+    if pattern == 'brick':
+        if brick_width_mm <= 0 or brick_height_mm <= 0:
+            raise ValueError('Brick width and height must be positive')
+        if not 0 <= brick_row_offset <= 1:
+            raise ValueError('Brick row offset must be between 0 and 1')
+        if brick_joint_mm < 0 or brick_joint_mm >= min(brick_width_mm, brick_height_mm):
+            raise ValueError('Brick joint must be nonnegative and smaller than both brick dimensions')
+        if brick_bevel_mm < 0 or 2 * brick_bevel_mm > min(brick_width_mm, brick_height_mm) - brick_joint_mm:
+            raise ValueError('Brick bevel must fit within the raised brick dimensions')
+        if brick_style not in ENUM_FIELDS['brick_style']:
+            raise ValueError('Invalid brick style')
+    # Pixel-center coordinates; no illumination, only geometry.
+    coord = (np.arange(pixels, dtype=np.float32) + 0.5) * (size_mm / pixels) - size_mm / 2
+    x = coord[None, :]
+    y = coord[:, None]
+    ang = math.radians(rotation)
+    u = (x * math.cos(ang) + y * math.sin(ang)) / pitch_mm
+    v = (-x * math.sin(ang) + y * math.cos(ang)) / pitch_mm
+    tau = 2 * math.pi
+    frac = lambda a: np.mod(a, 1.0)
+    tri = lambda a: 1.0 - 2.0 * np.abs(frac(a) - 0.5)
+    rr = np.sqrt(x*x + y*y)
+    theta = np.arctan2(y, x)
+
+    if pattern == 'brick':
+        h = _brick_height(u * pitch_mm + phase * brick_width_mm,
+                          v * pitch_mm, brick_width_mm, brick_height_mm,
+                          brick_joint_mm, brick_bevel_mm, brick_row_offset, brick_style)
+    elif pattern == 'hobnail':
+        h = 1 - 2 * np.maximum(np.abs(frac(u + phase) - .5), np.abs(frac(v + phase) - .5))
+        # A true truncated pyramid: fixed top plateau width in physical mm.
+        # softness retained as a backwards-compatible optional slope adjustment.
+        local = np.maximum(np.abs(frac(u + phase) - .5), np.abs(frac(v + phase) - .5))
+        half_top = top_width_mm / (2 * pitch_mm)
+        h = np.clip((.5 - local) / (.5 - half_top), 0, 1)
+        if softness:
+            h = np.clip(h / max(.05, 1 - .85 * softness), 0, 1)
+    elif pattern == 'tapisserie':
+        # Stepped raised square blocks with bevelled boundaries.
+        d = np.maximum(np.abs(frac(u + phase) - .5), np.abs(frac(v + phase) - .5))
+        # Distance from the cell boundary toward the square center, in mm.
+        # The recessed channel is centered on each grid line; the bevel
+        # begins at the inner channel edge and rises linearly to the top.
+        inward_mm = (.5 - d) * pitch_mm
+        channel_half = groove_width_mm / 2.0
+        if bevel_width_mm == 0:
+            h = (inward_mm >= channel_half).astype(np.float32)
+        else:
+            h = np.clip((inward_mm - channel_half) / bevel_width_mm, 0, 1)
+    elif pattern == 'sunburst':
+        # Radial, periodic groove field; finer grooves toward center.
+        h = .5 + .5 * np.cos(grooves * theta + tau * phase)
+        h = .5 + (h - .5) * (1 - .65 * softness)
+        # Single center pixel should not have an arbitrary angular value.
+        h = np.where(rr < size_mm / pixels, 0.5, h)
+    elif pattern == 'basketweave':
+        # Alternating raised horizontal and vertical ribbons, with smooth crossovers.
+        iu = np.floor(u + phase).astype(np.int32)
+        iv = np.floor(v + phase).astype(np.int32)
+        a = np.sin(math.pi * frac(u + phase)) ** 2
+        b = np.sin(math.pi * frac(v + phase)) ** 2
+        over = ((iu + iv) % 2) == 0
+        h = np.where(over, .22 + .78 * a, .22 + .78 * b)
+        h = np.clip(h, 0, 1)
+    elif pattern == 'barleycorn':
+        # Stylized interlaced, elongated grain-shaped lobes (not a historic toolpath).
+        row = np.floor(v + phase).astype(np.int32)
+        shift = .5 * (row % 2)
+        fu = frac(u + shift + phase)
+        fv = frac(v + phase)
+        du = (fu - .5) / .48
+        dv = (fv - .5) / .46
+        grain = np.maximum(0, 1 - du*du - dv*dv)
+        ridge = .5 + .5 * np.cos(tau * (u - .28 * np.sin(tau * v) + phase))
+        h = .08 + .82 * grain + .10 * ridge
+        h = np.clip(h, 0, 1)
+    elif pattern == 'fishscales':
+        h = _fishscales_height(u + phase, v + phase, fishscales_style, softness)
+    elif pattern == 'wave':
+        # Independent physical lateral meander and vertical ridge height.
+        lateral = wave_meander_mm / pitch_mm + .45 * softness
+        wave = .5 + .5 * np.cos(tau * (v + phase + lateral * np.sin(tau * u / 6)))
+        h = 1 - ridge_height_fraction * (1 - wave)
+    elif pattern == 'annularwave':
+        # Concentric circular ridges centered on the dial, with periodic Z-height.
+        # Rotation does not affect concentric geometry.
+        wave = .5 + .5 * np.cos(tau * (rr / pitch_mm + phase))
+        h = 1 - ridge_height_fraction * (1 - wave)
+        # Radial height depends only on radius; no directional lighting.
+    elif pattern == 'flinque':
+        # Radially organized intersecting sinusoidal guilloché waves.
+        radial = rr / pitch_mm
+        wave = radial + (.22 + .35 * softness) * np.sin(12 * theta + tau * phase)
+        h = .5 + .25 * np.cos(tau * wave) + .25 * np.cos(tau * (radial - .22 * np.sin(12*theta + tau*phase)))
+        h = np.clip(h, 0, 1)
+
+    elif pattern == 'graindorge':
+        # Staggered curved elongated grain lobes; grain_aspect sets length/width.
+        # Independent pitch along x, staggered rows along y.
+        rows = np.floor(v + phase).astype(np.int32)
+        a = frac(u / grain_aspect + .5 * (rows % 2) + phase) - .5
+        b = frac(v + phase) - .5
+        warp = a + amplitude * .25 * np.sin(tau * b)
+        ellipse = (warp / .48)**2 + (b / .46)**2
+        grain = np.clip(1 - ellipse, 0, 1)
+        # Fine central grain vein; pure height, not optical shading.
+        vein = np.exp(-((warp + .06 * np.sin(tau*b)) / .055)**2)
+        h = np.clip(.90 * grain**.65 + .10 * vein * (grain > 0), 0, 1)
+    elif pattern == 'flamme':
+        # Curved radial flames with radius-dependent taper of angular width.
+        # Flame taper controls narrowing of ridges toward the outer radius.
+        radius_fraction = np.clip(rr / (size_mm / 2), 0, 1)
+        swept = grooves * theta / tau + amplitude * np.sin(tau * rr / secondary_pitch_mm)
+        ridge = .5 + .5 * np.cos(tau * (swept + phase))
+        power = 1 + 5 * flame_taper * radius_fraction
+        h = ridge ** power
+        h = np.where(rr < size_mm / pixels, 0.5, h)
+    elif pattern == 'panier':
+        # Interlaced curved bands with independently adjustable bowing.
+        ua = u + ribbon_curvature * np.sin(tau * v / 4) + phase
+        va = v + ribbon_curvature * np.sin(tau * u / 4) + phase
+        parity = ((np.floor(ua).astype(np.int32) + np.floor(va).astype(np.int32)) % 2) == 0
+        hu = np.sin(math.pi * frac(ua))**2
+        hv = np.sin(math.pi * frac(va))**2
+        h = np.where(parity, .15 + .85 * hu, .15 + .85 * hv)
+    elif pattern == 'escargot':
+        # Archimedean spiral: phase advances with radius and azimuth.
+        h = .5 + .5 * np.cos(tau * (rr / pitch_mm - grooves * theta / tau + phase))
+    elif pattern == 'moire':
+        t = math.radians(angle_deg)
+        wave_a = np.cos(tau * (x / pitch_mm + phase))
+        wave_b = np.cos(tau * ((x*np.cos(t) + y*np.sin(t)) / secondary_pitch_mm + phase))
+        h = np.clip(.5 + .25 * (wave_a + wave_b), 0, 1)
+    elif pattern == 'chevron':
+        # Mirrored diagonal ridges, alternating direction by row.
+        row = np.floor(v + phase).astype(np.int32)
+        zig = np.abs(frac(u + phase) - .5)
+        h = .5 + .5 * np.cos(tau * (v + phase + amplitude * np.where(row % 2 == 0, zig, -zig)))
+    elif pattern == 'rosette':
+        petals = np.cos(grooves * theta + tau * phase)
+        secondary = np.cos(2 * grooves * theta + tau * phase)
+        modulation = (1 - rosette_harmonics) * petals + rosette_harmonics * secondary
+        h = .5 + .5 * np.cos(tau * (rr / pitch_mm + amplitude * modulation))
+        h = np.where(rr < size_mm / pixels, 0.5, h)
+    elif pattern == 'sectorrings':
+        rings = .5 + .5 * np.cos(tau * (rr / pitch_mm + phase))
+        sector = .5 + .5 * np.cos(segments * theta)
+        h = np.clip(rings * (.5 + .5 * sector), 0, 1)
+    elif pattern == 'honeycomb':
+        # Nearest center on triangular lattice; regular hexagonal Voronoi cells.
+        qy = v / .866025403784
+        iy = np.floor(qy).astype(np.int32)
+        nearest = np.full((pixels,pixels), np.inf, dtype=np.float32)
+        for dy in (-1, 0, 1, 2):
+            j = iy + dy
+            cx = np.floor(u - .5*(j % 2) + .5) + .5*(j % 2)
+            dx = u - cx
+            dist = np.sqrt(dx*dx + (.866025403784*(qy-j))**2)
+            nearest = np.minimum(nearest, dist)
+        # Valley near cell edges, high near cell center.
+        h = np.clip((.59 - nearest) / max(.02, .59 * (1-softness*.85)), 0, 1)
+    elif pattern == 'perlage':
+        # Staggered overlapping circular depressions, geometrical approximation.
+        rows = np.floor(v + phase).astype(np.int32)
+        dx = frac(u + .5*(rows % 2) + phase) - .5
+        dy = frac(v + phase) - .5
+        r = np.sqrt(dx*dx + dy*dy)
+        h = np.clip((r / .52)**(.8 + softness*2), 0, 1)
+    elif pattern == 'diamondlattice':
+        t = math.radians(angle_deg)
+        a = (x*np.cos(t) + y*np.sin(t))/pitch_mm
+        b = (x*np.cos(t) - y*np.sin(t))/pitch_mm
+        da = np.abs(frac(a + phase)-.5)*2
+        db = np.abs(frac(b + phase)-.5)*2
+        h = np.clip((1-da)*(1-db), 0, 1)
+    elif pattern == 'isometriccubes':
+        h = _cube_height(u + phase, v + phase, pitch_mm, cube_gap_mm, cube_step_fraction)
+    elif pattern == 'fanscallop':
+        row = np.floor(v + phase).astype(np.int32)
+        dx = frac(u + .5*(row%2) + phase) - .5
+        dy = frac(v + phase)
+        radial = np.sqrt(dx*dx + dy*dy)
+        h = .5 + .5*np.cos(tau*(radial * (1+amplitude) + phase))
+    elif pattern == 'asanoha':
+        h = _asanoha_height(u + phase, v + phase, pitch_mm, line_width_mm, asanoha_style)
+
+    h = np.asarray(h, dtype=np.float32)
+    if invert:
+        h = 1 - h
+    if circular:
+        h = np.where(rr <= size_mm / 2, h, np.clip(background, 0, 1))
+    out = np.uint16(np.round(np.clip(h, 0, 1) * 65535))
+    meta = dict(pattern=pattern, pattern_name=PATTERNS[pattern], size_mm=size_mm,
+                pixels=pixels, pitch_mm=pitch_mm, depth_mm=depth_mm,
+                rotation=rotation, phase=phase, softness=softness,
+                invert=invert, circular=circular, background=background,
+                grooves=grooves, groove_width_mm=groove_width_mm,
+                bevel_width_mm=bevel_width_mm, top_width_mm=top_width_mm,
+                wave_meander_mm=wave_meander_mm, ridge_height_fraction=ridge_height_fraction,
+                grain_aspect=grain_aspect, flame_taper=flame_taper,
+                ribbon_curvature=ribbon_curvature, rosette_harmonics=rosette_harmonics,
+                amplitude=amplitude,
+                secondary_pitch_mm=secondary_pitch_mm, angle_deg=angle_deg, segments=segments,
+                line_width_mm=line_width_mm, cube_gap_mm=cube_gap_mm, cube_step_fraction=cube_step_fraction, asanoha_style=asanoha_style, fishscales_style=fishscales_style, brick_width_mm=brick_width_mm,
+                brick_height_mm=brick_height_mm, brick_joint_mm=brick_joint_mm,
+                brick_bevel_mm=brick_bevel_mm, brick_row_offset=brick_row_offset,
+                brick_style=brick_style, grayscale='white=highest; black=deepest',
+                pixel_pitch_mm=size_mm/pixels,
+                note='Depth is design metadata; calibrate laser material removal experimentally.')
+    return out, meta
+
+
+def save_map(array, meta, output):
+    path = Path(output)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(np.asarray(array, dtype=np.uint16)).save(path)
+    Image.fromarray((array / 257).astype(np.uint8)).save(path.with_name(path.stem + '_8bit.png'))
+    path.with_suffix('.json').write_text(json.dumps(meta, indent=2), encoding='utf-8')
+    return path
+
+
+# Visible controls by pattern. Shared controls are always available.
+COMMON_FIELDS = ('size_mm', 'pixels', 'depth_mm')
+PATTERN_FIELDS = {
+    'hobnail': ('pitch_mm', 'rotation', 'phase', 'top_width_mm', 'softness'),
+    'tapisserie': ('pitch_mm', 'rotation', 'phase', 'groove_width_mm', 'bevel_width_mm'),
+    'barleycorn': ('pitch_mm', 'rotation', 'phase'),
+    'sunburst': ('grooves', 'phase', 'softness'),
+    'basketweave': ('pitch_mm', 'rotation', 'phase'),
+    'fishscales': ('pitch_mm', 'rotation', 'phase', 'softness', 'fishscales_style'),
+    'flinque': ('pitch_mm', 'phase', 'softness'),
+    'wave': ('pitch_mm', 'rotation', 'phase', 'wave_meander_mm', 'ridge_height_fraction'),
+    'annularwave': ('pitch_mm', 'phase', 'ridge_height_fraction'),
+    'graindorge': ('pitch_mm', 'rotation', 'phase', 'amplitude', 'grain_aspect'),
+    'flamme': ('grooves', 'secondary_pitch_mm', 'phase', 'amplitude', 'flame_taper'),
+    'panier': ('pitch_mm', 'rotation', 'phase', 'ribbon_curvature'),
+    'escargot': ('pitch_mm', 'grooves', 'phase'),
+    'moire': ('pitch_mm', 'secondary_pitch_mm', 'angle_deg', 'phase'),
+    'chevron': ('pitch_mm', 'rotation', 'phase', 'amplitude'),
+    'rosette': ('pitch_mm', 'grooves', 'phase', 'amplitude', 'rosette_harmonics'),
+    'sectorrings': ('pitch_mm', 'segments', 'phase'),
+    'honeycomb': ('pitch_mm', 'rotation', 'softness'),
+    'perlage': ('pitch_mm', 'rotation', 'phase', 'softness'),
+    'diamondlattice': ('pitch_mm', 'angle_deg', 'phase'),
+    'isometriccubes': ('pitch_mm', 'rotation', 'phase', 'cube_gap_mm', 'cube_step_fraction'),
+    'fanscallop': ('pitch_mm', 'rotation', 'phase', 'amplitude'),
+    'asanoha': ('pitch_mm', 'rotation', 'phase', 'line_width_mm', 'asanoha_style'),
+    'brick': ('brick_width_mm', 'brick_height_mm', 'brick_joint_mm', 'brick_bevel_mm', 'brick_row_offset', 'brick_style', 'rotation', 'phase'),
+
+}
+FIELD_SPECS = {
+    'size_mm': ('Area width (mm)', '28.5'),
+    'pixels': ('Output pixels / side', '2048'),
+    'depth_mm': ('Target depth (mm)', '0.15'),
+    'pitch_mm': ('Pattern pitch (mm)', '0.75'),
+    'rotation': ('Rotation (degrees)', '0'),
+    'phase': ('Pattern offset (cycles)', '0'),
+    'softness': ('Softness / meander (0–1)', '0'),
+    'grooves': ('Radial groove count', '96'),
+    'groove_width_mm': ('Groove width (mm)', '0.20'),
+    'bevel_width_mm': ('Bevel width (mm)', '0.08'),
+    'background': ('Outside-circle level (0–1)', '0'),
+    'top_width_mm': ('Hobnail plateau width (mm)', '0'),
+    'wave_meander_mm': ('Wave lateral meander (mm)', '0'),
+    'ridge_height_fraction': ('Wave ridge height fraction (0–1)', '1'),
+    'grain_aspect': ('Grain length / width ratio', '2'),
+    'flame_taper': ('Flame outward taper (0–1)', '0.5'),
+    'ribbon_curvature': ('Panier ribbon curvature (0–2)', '0.35'),
+    'rosette_harmonics': ('Rosette second harmonic (0–1)', '0'),
+    'amplitude': ('Pattern modulation (0–2)', '0.35'),
+    'secondary_pitch_mm': ('Secondary pitch (mm)', '1.2'),
+    'angle_deg': ('Crossing angle (degrees)', '60'),
+    'segments': ('Sector count', '12'),
+    'line_width_mm': ('Asanoha line width (mm)', '0.055'),
+    'asanoha_style': ('Asanoha relief style', 'faceted'),
+    'fishscales_style': ('Fish scales relief style', 'rounded'),
+    'cube_gap_mm': ('Cube border groove (mm)', '0.04'),
+    'cube_step_fraction': ('Cube face height step (0–0.5)', '0.28'),
+    'brick_width_mm': ('Brick width (mm)', '1.20'),
+    'brick_height_mm': ('Brick height (mm)', '0.60'),
+    'brick_joint_mm': ('Brick joint width (mm)', '0.10'),
+    'brick_bevel_mm': ('Brick bevel width (mm)', '0.08'),
+    'brick_row_offset': ('Brick row offset (0–1)', '0.50'),
+    'brick_style': ('Brick relief style', 'faceted'),
+}
+
+
+def run_gui():
+    try:
+        import tkinter as tk
+        from tkinter import ttk, filedialog, messagebox
+    except ImportError as e:
+        raise SystemExit('Tkinter is unavailable. Install python3-tk or use --cli.') from e
+
+    root = tk.Tk()
+    root.title('Watch Dial Pattern Generator v4.2.5')
+    root.geometry('980x760')
+    root.minsize(800, 580)
+    outer = ttk.Frame(root, padding=14)
+    outer.pack(fill='both', expand=True)
+    left = ttk.Frame(outer)
+    left.pack(side='left', fill='y', padx=(0, 18))
+    right = ttk.Frame(outer)
+    right.pack(side='left', fill='both', expand=True)
+    ttk.Label(left, text='Pattern parameters', font=('TkDefaultFont', 13, 'bold')).pack(anchor='w', pady=(0, 12))
+    ttk.Label(left, text='Pattern').pack(anchor='w')
+    pattern_combo = ttk.Combobox(left, state='readonly', width=33, values=list(PATTERNS.values()))
+    startup_pattern_index = 0
+    pattern_combo.current(startup_pattern_index)
+    pattern_combo.pack(fill='x', pady=(2, 10))
+    # Scroll the parameter column: small macOS screens can still access every control.
+    scroll_holder = ttk.Frame(left)
+    scroll_holder.pack(fill='x')
+    field_canvas = tk.Canvas(scroll_holder, width=290, height=430, highlightthickness=0)
+    field_scroll = ttk.Scrollbar(scroll_holder, orient='vertical', command=field_canvas.yview)
+    field_canvas.configure(yscrollcommand=field_scroll.set)
+    field_canvas.pack(side='left', fill='y')
+    field_scroll.pack(side='left', fill='y')
+    field_frame = ttk.Frame(field_canvas)
+    field_canvas.create_window((0,0), window=field_frame, anchor='nw')
+    field_frame.bind('<Configure>', lambda e: field_canvas.configure(scrollregion=field_canvas.bbox('all')))
+    values = {key: tk.StringVar(value=default) for key, (_, default) in FIELD_SPECS.items()}
+    field_rows = {}
+    field_inputs = {}
+    for key, (label, _) in FIELD_SPECS.items():
+        row = ttk.Frame(field_frame)
+        ttk.Label(row, text=label).pack(anchor='w')
+        if key in ENUM_FIELDS:
+            widget = ttk.Combobox(row, textvariable=values[key], state='readonly', width=31, values=list(ENUM_FIELDS[key]))
+            widget.set(values[key].get())
+        else:
+            widget = ttk.Entry(row, textvariable=values[key], width=34)
+        widget.pack(fill='x', pady=(1, 7))
+        field_rows[key] = row
+        field_inputs[key] = widget
+    invert = tk.BooleanVar(value=False)
+    circular = tk.BooleanVar(value=False)
+    ttk.Checkbutton(left, text='Invert height map', variable=invert).pack(anchor='w')
+    ttk.Checkbutton(left, text='Circular mask', variable=circular).pack(anchor='w')
+    ttk.Label(right, text='Grayscale height map preview', font=('TkDefaultFont', 13, 'bold')).pack(anchor='w')
+    preview_label = ttk.Label(right)
+    preview_label.pack(fill='both', expand=True, pady=10)
+    status = tk.StringVar(value='Preview is a reduced-resolution sample.')
+    ttk.Label(right, textvariable=status, wraplength=480).pack(anchor='w', pady=8)
+    right._preview_image = None
+
+    def selected_pattern():
+        return list(PATTERNS)[pattern_combo.current()]
+
+    def refresh_fields(event=None):
+        for row in field_rows.values():
+            row.pack_forget()
+        active = COMMON_FIELDS + PATTERN_FIELDS[selected_pattern()]
+        if circular.get():
+            active += ('background',)
+        for key in active:
+            field_rows[key].pack(fill='x')
+        update_preview()
+
+    def params(preview=False):
+        active = set(COMMON_FIELDS + PATTERN_FIELDS[selected_pattern()])
+        if circular.get():
+            active.add('background')
+        kw = {}
+        for k in active:
+            if k in ENUM_FIELDS:
+                kw[k] = values[k].get()
+            elif k in ('pixels', 'grooves', 'segments'):
+                kw[k] = int(values[k].get())
+            else:
+                kw[k] = float(values[k].get())
+        kw.update(pattern=selected_pattern(), invert=invert.get(), circular=circular.get())
+        if preview:
+            kw['pixels'] = min(480, kw['pixels'])
+        return kw
+
+    def update_preview():
+        try:
+            arr, meta = render(**params(preview=True))
+            im = Image.fromarray((arr / 257).astype(np.uint8))
+            im.thumbnail((480, 480))
+            photo = ImageTk.PhotoImage(im)
+            preview_label.configure(image=photo)
+            right._preview_image = photo
+            status.set(f"{meta['pattern_name']} | preview {meta['pixels']} px | white = high")
+        except Exception as e:
+            status.set('Preview error: ' + str(e))
+
+    def export():
+        try:
+            kw = params()
+            filename = filedialog.asksaveasfilename(defaultextension='.png',
+                filetypes=[('PNG image', '*.png')], initialfile=kw['pattern'] + '_heightmap.png')
+            if not filename:
+                return
+            root.config(cursor='watch')
+            root.update_idletasks()
+            arr, meta = render(**kw)
+            save_map(arr, meta, filename)
+            status.set('Saved 16-bit PNG, 8-bit PNG, and JSON: ' + filename)
+            messagebox.showinfo('Export complete', 'Saved 16-bit PNG, 8-bit PNG and JSON settings.')
+        except Exception as e:
+            messagebox.showerror('Export failed', str(e))
+        finally:
+            root.config(cursor='')
+
+    def reset_all():
+        # Reset hidden fields as well as currently visible fields, then re-render.
+        for key, (_, default) in FIELD_SPECS.items():
+            values[key].set(default)
+        invert.set(False)
+        circular.set(False)
+        pattern_combo.current(startup_pattern_index)
+        field_canvas.yview_moveto(0)
+        refresh_fields()
+        status.set('All values reset to startup defaults. ' + status.get())
+
+    pattern_combo.bind('<<ComboboxSelected>>', refresh_fields)
+    for key, widget in field_inputs.items():
+        if key in ENUM_FIELDS:
+            widget.bind('<<ComboboxSelected>>', lambda event: update_preview())
+    circular.trace_add('write', lambda *_: refresh_fields())
+    ttk.Button(left, text='Update preview', command=update_preview).pack(fill='x', pady=(12, 5))
+    ttk.Button(left, text='Reset to defaults', command=reset_all).pack(fill='x', pady=(0, 5))
+    ttk.Button(left, text='Export PNG + settings', command=export).pack(fill='x')
+    ttk.Label(left, text=('White = highest surface; black = deepest.\nNo simulated lighting.\n\n'
+        'Only relevant pattern controls are shown.\nTapisserie groove and bevel widths are independent.\n'
+        'Asanoha supports engraved, faceted, and rounded relief styles.\nFish Scales supports engraved, faceted, and rounded relief styles.'), wraplength=270).pack(anchor='w', pady=14)
+    refresh_fields()
+    root.mainloop()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--gui', action='store_true', help='Launch Tkinter interface (default without args)')
+    parser.add_argument('--cli', action='store_true', help='Generate using command-line arguments')
+    parser.add_argument('--pattern', choices=list(PATTERNS), default='hobnail')
+    parser.add_argument('--size-mm', type=float, default=28.5)
+    parser.add_argument('--pixels', type=int, default=2048)
+    parser.add_argument('--pitch-mm', type=float, default=.75)
+    parser.add_argument('--depth-mm', type=float, default=.15)
+    parser.add_argument('--rotation', type=float, default=0)
+    parser.add_argument('--phase', type=float, default=0)
+    parser.add_argument('--softness', type=float, default=0)
+    parser.add_argument('--grooves', type=int, default=96)
+    parser.add_argument('--invert', action='store_true')
+    parser.add_argument('--circular', action='store_true')
+    parser.add_argument('--background', type=float, default=0)
+    parser.add_argument('--groove-width-mm', type=float, default=0.20, help='Tapisserie recessed channel width')
+    parser.add_argument('--bevel-width-mm', type=float, default=0.08, help='Tapisserie slope width on each square edge')
+    parser.add_argument('--top-width-mm', type=float, default=0)
+    parser.add_argument('--wave-meander-mm', type=float, default=0)
+    parser.add_argument('--ridge-height-fraction', type=float, default=1)
+    parser.add_argument('--grain-aspect', type=float, default=2)
+    parser.add_argument('--flame-taper', type=float, default=.5)
+    parser.add_argument('--ribbon-curvature', type=float, default=.35)
+    parser.add_argument('--rosette-harmonics', type=float, default=0)
+    parser.add_argument('--amplitude', type=float, default=.35)
+    parser.add_argument('--secondary-pitch-mm', type=float, default=1.2)
+    parser.add_argument('--angle-deg', type=float, default=60)
+    parser.add_argument('--segments', type=int, default=12)
+    parser.add_argument('--line-width-mm', type=float, default=.055)
+    parser.add_argument('--cube-gap-mm', type=float, default=.04)
+    parser.add_argument('--cube-step-fraction', type=float, default=.28)
+    parser.add_argument('--asanoha-style', choices=ENUM_FIELDS['asanoha_style'], default='faceted')
+    parser.add_argument('--fishscales-style', choices=ENUM_FIELDS['fishscales_style'], default='rounded')
+    parser.add_argument('--brick-width-mm', type=float, default=1.2)
+    parser.add_argument('--brick-height-mm', type=float, default=.6)
+    parser.add_argument('--brick-joint-mm', type=float, default=.1)
+    parser.add_argument('--brick-bevel-mm', type=float, default=.08)
+    parser.add_argument('--brick-row-offset', type=float, default=.5)
+    parser.add_argument('--brick-style', choices=ENUM_FIELDS['brick_style'], default='faceted')
+    parser.add_argument('--output', default='watch_dial_heightmap.png')
+    args = parser.parse_args()
+    if args.gui or (not args.cli and len(__import__('sys').argv) == 1):
+        run_gui()
+        return
+    options = vars(args)
+    options.pop('gui')
+    options.pop('cli')
+    output = options.pop('output')
+    array, meta = render(**options)
+    save_map(array, meta, output)
+    print('Saved:', output, '| 8-bit copy and JSON metadata saved alongside')
+
+
+if __name__ == '__main__':
+    main()
