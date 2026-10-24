@@ -6,11 +6,7 @@ A mathematical grayscale height-map generator for watch dials. Supports a Tkinte
 
 If this app helps with your watchmaking projects, consider supporting its development with a monetary donation. Contributions help fund ongoing development and maintenance. ***Support is entirely optional***—the project remains free and open source. To donate, simply click the **Sponsor** button above and select your preferred payment platform from the list of available options.
 
-<table>
-  <tr>
-    <td><img src="images/SponsorButtonScreenshot.png" alt="Click the Sponsor button in the repository header to donate or sponsor the project."></td>
-  </tr>
-</table>
+[❤️ Donate / Sponsor](https://paypal.me/edwilson97)
 
 ## License
 
