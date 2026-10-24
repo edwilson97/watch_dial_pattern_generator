@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageTk
 
+__version__ = '1.0.0'
+
 PATTERNS = {
     'hobnail': 'Clous de Paris / Hobnail',
     'barleycorn': 'Barleycorn (stylized guilloché)',
@@ -601,15 +603,55 @@ FIELD_SPECS = {
 }
 
 
+FIELD_TOOLTIPS = {
+    'size_mm': 'Enter the width of the square design area in millimeters. With a circular mask, this is the circle diameter.',
+    'pixels': 'Enter a whole number from 128 to 8192 for each side of the saved image. More pixels preserve finer details but take longer.',
+    'depth_mm': 'Enter the intended surface depth in millimeters, greater than 0. Used for the 3D view and saved settings; actual engraving depth depends on your laser setup.',
+    'pitch_mm': 'Enter the spacing between repeating pattern features in millimeters, greater than 0. Smaller values make a finer pattern.',
+    'rotation': 'Enter an angle in degrees to turn the pattern. Use 0 for its original direction.',
+    'phase': 'Shift where the pattern starts. Enter a number in pattern repeats; try 0.5 for a half-repeat shift.',
+    'softness': 'Enter 0 to 1 to adjust the pattern shape. Higher values soften relief or add waviness, depending on the pattern.',
+    'grooves': 'Enter a whole number of radial grooves or repeating features around the center, at least 4.',
+    'groove_width_mm': 'Enter the width of the recessed channels between squares in millimeters. Use 0 or more, less than the pattern pitch.',
+    'bevel_width_mm': 'Enter the width of each sloped square edge in millimeters. Use 0 for sharp edges; slopes must fit within half the raised square width.',
+    'background': 'Set the height outside the circle: 0 is deepest (black), 1 is highest (white), and values between give intermediate heights.',
+    'top_width_mm': 'Enter the flat top width of each hobnail in millimeters. Use 0 for pointed tops, or a value smaller than the pattern pitch.',
+    'wave_meander_mm': 'Enter how far the waves bend sideways in millimeters. Use 0 for straight waves or a larger value for more bending.',
+    'ridge_height_fraction': 'Enter 0 to 1 for the wave relief strength. Use 0 for a flat surface or 1 for the full height range.',
+    'grain_aspect': 'Enter the grain length compared with its width, at least 1. For example, 2 makes grains twice as long as they are wide.',
+    'flame_taper': 'Enter 0 to 1 to narrow flames toward the outside of the dial. Higher values make the outer tips narrower.',
+    'ribbon_curvature': 'Enter 0 to 2 to bend the woven ribbons. Use 0 for straight ribbons or a larger value for more curve.',
+    'rosette_harmonics': 'Enter 0 to 1 to blend extra petals into the rosette. Use 0 for the original petal count or 1 for twice as many.',
+    'amplitude': 'Enter 0 to 2 to adjust the strength of the pattern variation, such as bending, zigzags, petals, or scallop ribs.',
+    'secondary_pitch_mm': 'Enter the spacing of the second wave pattern in millimeters, greater than 0. For flames, this sets how often they bend outward.',
+    'angle_deg': 'Enter an angle in degrees to change how the lines cross and shape the diamonds or overlapping waves.',
+    'segments': 'Enter a whole number, at least 2, for the number of sections around the rings.',
+    'line_width_mm': 'Enter the hemp-leaf groove width in millimeters, greater than 0 and less than half the pattern pitch.',
+    'asanoha_style': 'Choose flat, angled faces (faceted), soft domes (rounded), or grooves cut into a flat surface (engraved).',
+    'fishscales_style': 'Choose soft curved scales (rounded), angled scales (faceted), or scale outlines cut into a flat surface (engraved).',
+    'cube_gap_mm': 'Enter the groove width between cubes in millimeters, greater than 0 and less than half the pattern pitch.',
+    'cube_step_fraction': 'Enter a value greater than 0 and less than 0.5 for the height difference between cube faces. Larger values make the steps deeper.',
+    'brick_width_mm': 'Enter the horizontal size of each repeating brick in millimeters, greater than 0.',
+    'brick_height_mm': 'Enter the vertical size of each brick row in millimeters, greater than 0.',
+    'brick_joint_mm': 'Enter the gap between bricks in millimeters. Use 0 or more, smaller than both the brick width and height.',
+    'brick_bevel_mm': 'Enter the sloped edge width of each brick in millimeters. Use 0 for sharp edges; slopes must fit within half the raised brick width and height.',
+    'brick_row_offset': 'Enter 0 to 1 to shift alternate brick rows. Use 0 for aligned joints or 0.5 for a half-brick shift.',
+    'brick_style': 'Choose bricks with sloped edges (faceted), soft tops (rounded), or joints cut into a flat surface (engraved).',
+    'perlage_ring_pitch_mm': 'Enter the spacing between fine rings within each circular mark in millimeters, greater than 0.',
+    'perlage_overlap': 'Enter 0 to 0.5 for how much neighboring circular marks overlap. Use 0 for touching marks or 0.5 for the most overlap.',
+}
+
+
 def run_gui():
     try:
         import tkinter as tk
         from tkinter import ttk, filedialog, messagebox
     except ImportError as e:
         raise SystemExit('Tkinter is unavailable. Install python3-tk or use --cli.') from e
+    from gui_tooltips import add_tooltip
 
     root = tk.Tk()
-    root.title('Watch Dial Pattern Generator v0.2')
+    root.title(f'Watch Dial Pattern Generator v{__version__}')
     root.geometry('980x760')
     root.minsize(800, 580)
     outer = ttk.Frame(root, padding=14)
@@ -625,6 +667,7 @@ def run_gui():
     startup_pattern_index = 0
     pattern_combo.current(startup_pattern_index)
     pattern_combo.pack(fill='x', pady=(2, 10))
+    add_tooltip(pattern_combo, 'Choose a dial pattern. The fields below change to show the settings for that pattern.')
     # Scroll the parameter column: small macOS screens can still access every control.
     scroll_holder = ttk.Frame(left)
     scroll_holder.pack(fill='x')
@@ -648,12 +691,15 @@ def run_gui():
         else:
             widget = ttk.Entry(row, textvariable=values[key], width=34)
         widget.pack(fill='x', pady=(1, 7))
+        add_tooltip(widget, FIELD_TOOLTIPS[key])
         field_rows[key] = row
         field_inputs[key] = widget
     invert = tk.BooleanVar(value=False)
     circular = tk.BooleanVar(value=False)
-    ttk.Checkbutton(left, text='Invert height map', variable=invert).pack(anchor='w')
-    ttk.Checkbutton(left, text='Circular mask', variable=circular).pack(anchor='w')
+    add_tooltip(ttk.Checkbutton(left, text='Invert height map', variable=invert),
+                'Swap high and low areas: raised features become recessed, and recessed features become raised.').pack(anchor='w')
+    add_tooltip(ttk.Checkbutton(left, text='Circular mask', variable=circular),
+                'Keep the pattern inside a circle. Use Outside-circle level to set the height of the surrounding area.').pack(anchor='w')
     ttk.Label(right, text='Grayscale height map preview', font=('TkDefaultFont', 13, 'bold')).pack(anchor='w')
     preview_label = ttk.Label(right)
     preview_label.pack(fill='both', expand=True, pady=10)
@@ -763,7 +809,8 @@ def run_gui():
             widget.bind('<<ComboboxSelected>>', lambda event: update_preview())
     circular.trace_add('write', lambda *_: refresh_fields())
     invert.trace_add('write', lambda *_: update_preview())
-    ttk.Button(left, text='Update preview', command=update_preview).pack(fill='x', pady=(12, 5))
+    add_tooltip(ttk.Button(left, text='Update preview', command=update_preview),
+                'Redraw the small preview using your current settings. White areas are high and black areas are deep.').pack(fill='x', pady=(12, 5))
     def inspect_relief():
         try:
             from inspection import open_inspection
@@ -774,9 +821,12 @@ def run_gui():
         except Exception as e:
             messagebox.showerror('Inspection failed', str(e))
 
-    ttk.Button(left, text='Inspect enlarged / 3D', command=inspect_relief).pack(fill='x', pady=(0, 5))
-    ttk.Button(left, text='Reset to defaults', command=reset_all).pack(fill='x', pady=(0, 5))
-    ttk.Button(left, text='Export PNG + settings', command=export).pack(fill='x')
+    add_tooltip(ttk.Button(left, text='Inspect enlarged / 3D', command=inspect_relief),
+                'Open a larger view to zoom in and explore the surface in 3D. It updates as you change settings.').pack(fill='x', pady=(0, 5))
+    add_tooltip(ttk.Button(left, text='Reset to defaults', command=reset_all),
+                'Restore the starting pattern and all original settings, including settings for other patterns.').pack(fill='x', pady=(0, 5))
+    add_tooltip(ttk.Button(left, text='Export PNG + settings', command=export),
+                'Choose where to save the full-size height map, an 8-bit image copy, and a settings file.').pack(fill='x')
     ttk.Label(left, text=('White = highest surface; black = deepest.\nExports contain height only.\n\n'
         'Only relevant pattern controls are shown.\nTapisserie groove and bevel widths are independent.\n'
         'Asanoha supports engraved, faceted, and rounded relief styles.\nFish Scales supports engraved, faceted, and rounded relief styles.'), wraplength=270).pack(anchor='w', pady=14)
@@ -790,6 +840,7 @@ def run_gui():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     parser.add_argument('--gui', action='store_true', help='Launch Tkinter interface (default without args)')
     parser.add_argument('--cli', action='store_true', help='Generate using command-line arguments')
     parser.add_argument('--pattern', choices=list(PATTERNS), default='hobnail')

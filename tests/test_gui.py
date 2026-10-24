@@ -31,6 +31,26 @@ class GuiTests(unittest.TestCase):
                     self.assertIn('Export PNG + settings', buttons)
                     self.assertIn('Update preview', buttons)
                     self.assertIn('Reset to defaults', buttons)
+                    # Every editable control has help, including hidden pattern fields.
+                    controls = [w for w in widgets if isinstance(
+                        w, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Checkbutton))]
+                    self.assertTrue(all(w.tooltip.text for w in controls))
+                    # Hover help appears without stealing focus, then closes on exit.
+                    button = buttons['Update preview']
+                    button.focus_force()
+                    root.update()
+                    button.event_generate('<Enter>')
+                    deadline = time.monotonic() + 2
+                    while button.tooltip.window is None and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(.01)
+                    self.assertIsNotNone(button.tooltip.window)
+                    self.assertEqual(root.focus_get(), button)
+                    button.event_generate('<Leave>')
+                    self.assertIsNone(button.tooltip.window)
+                    button.event_generate('<Enter>')
+                    button.event_generate('<Leave>')
+                    self.assertIsNone(button.tooltip.timer)
                     fields = {}
                     for w in widgets:
                         if isinstance(w, ttk.Frame):
