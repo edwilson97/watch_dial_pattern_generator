@@ -27,6 +27,8 @@ def main():
         x=i%4*256;y=i//4*290
         sheet.paste(im.resize((246,246)),(x+5,y+5))
         draw.text((x+8,y+255),key,fill='black')
-    sheet.save(Path(__file__).resolve().parent.parent/'pattern_catalog.png')
+    catalog = Path(__file__).resolve().parent.parent/'images'/'pattern_catalog.png'
+    catalog.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(catalog)
     print('PASS:',len(thumbs),'patterns and 8/16-bit export')
 if __name__=='__main__':main()

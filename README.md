@@ -92,7 +92,7 @@ To see all available options for the CLI, use the `-h` or `--help` command line 
 
 Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, and `brick`.
 
-[View the pattern catalog (PNG)](pattern_catalog.png) for a visual guide to all 24 patterns.
+[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 24 patterns.
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
@@ -116,7 +116,7 @@ keep the last valid preview visible and show an error in the status text.
 python3 -m tests.test_patterns
 ```
 
-This tests all 24 generators and PNG exports and creates `pattern_catalog.png`.
+This tests all 24 generators and PNG exports and creates `images/pattern_catalog.png`.
 
 ## Full test suite (including real Tkinter GUI interaction)
 
