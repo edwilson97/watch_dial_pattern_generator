@@ -2,9 +2,9 @@
 
 A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 24 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
-## Sponsorship
+## Donate/Sponsor
 
-If this app helps with your watchmaking projects, consider supporting its development. Contributions help fund ongoing development and maintenance. ***Support is entirely optional***—the project remains free and open source.
+If this app helps with your watchmaking projects, consider supporting its development with a monetary donation. Contributions help fund ongoing development and maintenance. ***Support is entirely optional***—the project remains free and open source. To donate, simply click the **Sponsor** button above and select your preferred payment platform from the list of available options.
 
 ## License
 
