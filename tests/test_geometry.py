@@ -1,4 +1,4 @@
-"""Regression tests for v4.2 geometric controls and validation."""
+"""Regression tests for v0.1 geometric controls and validation."""
 import unittest
 import numpy as np
 from dial_patterns import render, PATTERN_FIELDS, FIELD_SPECS

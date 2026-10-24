@@ -609,7 +609,7 @@ def run_gui():
         raise SystemExit('Tkinter is unavailable. Install python3-tk or use --cli.') from e
 
     root = tk.Tk()
-    root.title('Watch Dial Pattern Generator v4.3')
+    root.title('Watch Dial Pattern Generator v0.2')
     root.geometry('980x760')
     root.minsize(800, 580)
     outer = ttk.Frame(root, padding=14)
