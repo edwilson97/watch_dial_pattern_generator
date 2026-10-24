@@ -1,5 +1,6 @@
 """End-to-end Tkinter smoke/regression tests; run with a real display or xvfb-run."""
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -86,6 +87,8 @@ class GuiTests(unittest.TestCase):
                     root.update()
                     self.assertEqual(combo.current(), 0)
                     for key, (label, default) in app.FIELD_SPECS.items():
+                        if key == 'pitch_mm':
+                            default = str(app.default_pitch('hobnail'))
                         self.assertEqual(fields[label][1].get(), default, key)
                     self.assertTrue(all(not w.instate(['selected']) for w in checks))
                     visible = {label for label,(frame,_) in fields.items() if frame.winfo_manager()}
@@ -99,6 +102,80 @@ class GuiTests(unittest.TestCase):
                         match[0].delete(0, 'end')
                         match[0].insert(0, value)
                     buttons['Update preview'].invoke()
+                    groove = fields['Groove width (mm)'][1]
+                    depth = fields['Target depth (mm)'][1]
+                    groove.focus_force()
+                    root.update()
+                    with patch.object(app, 'render', wraps=app.render) as preview_render:
+                        groove.delete(0, 'end')
+                        groove.insert(0, '0.25')
+                        root.update()
+                        preview_render.assert_not_called()
+                        depth.focus_set()
+                        root.update()
+                        preview_render.assert_called_once()
+                        self.assertEqual(preview_render.call_args.kwargs['groove_width_mm'], .25)
+                        # Moving between unchanged fields does not render again.
+                        groove.focus_set()
+                        root.update()
+                        depth.focus_set()
+                        root.update()
+                        self.assertEqual(preview_render.call_count, 1)
+                        # Invalid values leave the last valid preview in place.
+                        preview_widget = next(w for w in descendants(root)
+                                              if isinstance(w, ttk.Label) and w.cget('image'))
+                        image = preview_widget.cget('image')
+                        groove.focus_set()
+                        root.update()
+                        groove.delete(0, 'end')
+                        depth.focus_set()
+                        root.update()
+                        self.assertEqual(preview_widget.cget('image'), image)
+                        groove.insert(0, '0.30')
+                    with patch('inspection.open_inspection') as launch:
+                        launch.return_value.alive.return_value = True
+                        buttons['Inspect enlarged / 3D'].invoke()
+                        launch.assert_called_once()
+                        self.assertEqual(launch.call_args.args[1].shape, (256, 256))
+                        session = launch.return_value
+
+                        def pump_until(predicate, timeout=3):
+                            deadline = time.monotonic() + timeout
+                            while not predicate() and time.monotonic() < deadline:
+                                root.update()
+                                time.sleep(.01)
+                            self.assertTrue(predicate())
+
+                        groove = fields['Groove width (mm)'][1]
+                        groove.delete(0, 'end')
+                        groove.insert(0, '0.25')
+                        groove.delete(0, 'end')
+                        groove.insert(0, '0.15')
+                        pump_until(lambda: session.update.call_count == 1)
+                        updated, meta = session.update.call_args.args
+                        expected, _ = app.render(pattern='tapisserie', pixels=256, groove_width_mm=.15)
+                        import numpy as np
+                        np.testing.assert_array_equal(updated, expected)
+                        # An incomplete entry retains the last good viewer frame.
+                        groove.delete(0, 'end')
+                        deadline = time.monotonic() + .5
+                        while time.monotonic() < deadline:
+                            root.update()
+                            time.sleep(.01)
+                        self.assertEqual(session.update.call_count, 1)
+                        groove.insert(0, '0.20')
+                        checks[0].invoke()
+                        combo.current(list(app.PATTERNS).index('wave'))
+                        combo.event_generate('<<ComboboxSelected>>')
+                        pump_until(lambda: session.update.call_count == 2)
+                        self.assertEqual(session.update.call_args.args[1]['pattern'], 'wave')
+                        buttons['Reset to defaults'].invoke()
+                        # Keep the native test small while verifying reset propagation.
+                        pixels = fields['Output pixels / side'][1]
+                        pixels.delete(0, 'end')
+                        pixels.insert(0, '256')
+                        pump_until(lambda: session.update.call_count == 3)
+                        self.assertEqual(session.update.call_args.args[1]['pattern'], 'hobnail')
                     buttons['Export PNG + settings'].invoke()
                     self.assertTrue(target.is_file())
                     with Image.open(target) as im:

@@ -72,7 +72,7 @@ class GeometryTests(unittest.TestCase):
         self.assertFalse(np.array_equal(engraved, rounded))
 
     def test_invalid_ranges(self):
-        cases=[('hobnail',{'top_width_mm':.75}),('hobnail',{'top_width_mm':-.1}),
+        cases=[('hobnail',{'top_width_mm':1.0}),('hobnail',{'top_width_mm':-.1}),
                ('wave',{'wave_meander_mm':-.1}),('wave',{'ridge_height_fraction':1.1}),
                ('graindorge',{'grain_aspect':.5}),('flamme',{'flame_taper':-1}),
                ('panier',{'ribbon_curvature':2.1}),('rosette',{'rosette_harmonics':1.1}),

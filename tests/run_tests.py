@@ -10,15 +10,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-here = Path(__file__).resolve().parent
+here = Path(__file__).resolve().parent.parent
 commands = [
-    [sys.executable, 'test_patterns.py'],
-    [sys.executable, '-m', 'unittest', 'test_geometry', 'test_distinct_lattices', 'test_fishscales_relief', 'test_brick', '-v'],
+    [sys.executable, '-m', 'tests.test_patterns'],
+    [sys.executable, '-m', 'unittest', 'tests.test_geometry', 'tests.test_distinct_lattices', 'tests.test_fishscales_relief', 'tests.test_brick', 'tests.test_relief_inspection', '-v'],
 ]
 for command in commands:
     subprocess.run(command, cwd=here, check=True)
 
-gui_command = [sys.executable, '-m', 'unittest', 'test_gui', '-v']
+gui_command = [sys.executable, '-m', 'unittest', 'tests.test_gui', 'tests.test_pyvista_viewer', '-v']
 if sys.platform.startswith('linux') and shutil.which('xvfb-run'):
     gui_command = ['xvfb-run', '-a'] + gui_command
 subprocess.run(gui_command, cwd=here, check=True)

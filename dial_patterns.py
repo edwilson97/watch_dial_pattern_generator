@@ -167,46 +167,76 @@ def _cube_height(u, v, pitch_mm, cube_gap_mm, cube_step_fraction):
 
 
 
-def _fishscales_height(u, v, style='rounded', softness=0.0):
-    """Fish scales with three relief styles.
+def _woven_height(u, v, base):
+    """Alternating ribbon bodies with smooth, shared boundary heights."""
+    fu, fv = np.mod(u, 1.), np.mod(v, 1.)
+    def end_taper(t):
+        t = np.clip(np.minimum(t, 1-t)/.15, 0, 1)
+        return t*t*(3-2*t)
+    vertical = np.sin(np.pi*fu)**4 * end_taper(fv)
+    horizontal = end_taper(fu) * np.sin(np.pi*fv)**4
+    over = (np.floor(u).astype(np.int32)+np.floor(v).astype(np.int32)) % 2 == 0
+    return base + (1-base)*np.where(over, vertical, horizontal)
 
-    engraved: mostly flat scales separated by recessed arc grooves.
-    faceted: plate-like scales with planar relief toward a central ridge.
-    rounded: convex scales with domed interiors.
-    """
+
+def _scallop_coordinates(u, v):
+    """Cells bounded by consecutive staggered arcs, with no horizontal row reset."""
     row = np.floor(v).astype(np.int32)
-    x = np.mod(u + 0.5 * (row % 2), 1.0) - 0.5
-    y = np.mod(v, 1.0)
+    def local_x(r):
+        return np.mod(u + .5 * (r % 2), 1.) - .5
+    x = local_x(row)
+    arc = lambda xx: 1 - np.sqrt(.95**2 - xx**2)
+    row = row - ((v - row) < arc(x))
+    x = local_x(row)
+    lower = row + arc(x)
+    upper = row + 1 + arc(local_x(row + 1))
+    t = np.clip((v - lower) / (upper - lower), 0, 1)
+    # Vertical arc distance converted to approximate normal distance.
+    slope = x / np.sqrt(.95**2 - x*x)
+    next_x = local_x(row + 1)
+    next_slope = next_x / np.sqrt(.95**2 - next_x*next_x)
+    distance = np.minimum((v-lower)/np.sqrt(1+slope*slope),
+                          (upper-v)/np.sqrt(1+next_slope*next_slope))
+    return x, t, distance
 
-    r = 0.95
-    safe = np.sqrt(np.maximum(r * r - x * x, 0.0))
-    y_arc = 1.0 - safe
-    boundary_dist = np.abs(y - y_arc)
-    groove_soft = 0.018 + 0.08 * softness
-    groove_mask = np.clip((boundary_dist - groove_soft * 0.55) / max(groove_soft * 0.95, 1e-6), 0, 1)
 
-    # Also taper slightly toward the left/right sides so scales read as individual bodies.
-    side = np.clip(1 - (np.abs(x) / 0.5) ** (1.2 if style == 'rounded' else 1.0), 0, 1)
-    depth = np.clip((y - y_arc) / np.maximum(1 - y_arc, 1e-6), 0, 1)
-
+def _fishscales_height(u, v, style='rounded', softness=0.0):
+    """Continuous staggered arc cells; all styles meet at recessed boundaries."""
+    x, t, distance = _scallop_coordinates(u, v)
+    width = .018 + .08 * softness
+    groove = np.clip((distance - width*.55) / (width*.95), 0, 1)
+    side = np.clip(1 - 2*np.abs(x), 0, 1)
     if style == 'engraved':
-        return groove_mask
-    elif style == 'faceted':
-        ridge = np.clip(1 - np.abs(depth - 0.62) / 0.62, 0, 1)
-        plate = np.minimum(side, ridge)
-        relief = 0.18 + 0.82 * plate
+        return groove
+    if style == 'faceted':
+        body = np.minimum(side, 1 - np.abs(2*t-1))
     elif style == 'rounded':
-        dome_x = (x / 0.46) ** 2
-        dome_y = ((depth - 0.60) / 0.55) ** 2
-        dome = np.clip(1 - dome_x - dome_y, 0, 1)
-        relief = np.clip(0.12 + 0.38 * np.sqrt(np.clip(side, 0, 1)) + 0.62 * dome, 0, 1)
+        body = np.sin(np.pi*t) * np.cos(np.pi*x)**2
     else:
-        raise ValueError('Fish scales style must be one of: ' + ', '.join(ENUM_FIELDS['fishscales_style']))
+        raise ValueError('Invalid fish scales style')
+    return groove * (.18 + .82 * body)
 
-    h = np.clip(groove_mask * relief, 0, 1)
-    peak = np.max(h)
-    if peak > 1e-6:
-        h = h / peak
+
+def _perlage_height(u, v, pitch_mm, ring_pitch_mm, overlap):
+    """Overlapping circular graining strokes with feathered rims.
+
+    Each later stroke replaces the preceding shallow ring texture locally.
+    Cosine feathering avoids hard depth jumps at circular stroke boundaries.
+    """
+    radius = .5 / (1-overlap)
+    row0 = np.floor(v).astype(np.int32)
+    h = np.ones(np.broadcast_shapes(u.shape, v.shape), dtype=np.float32)
+    for dr in (-2, -1, 0, 1, 2):
+        row = row0 + dr
+        col0 = np.floor(u - .5*(row % 2)).astype(np.int32)
+        for dc in (-2, -1, 0, 1, 2):
+            cx = col0 + dc + .5*(row % 2)
+            r = np.hypot(u-cx, v-row)
+            blend = np.clip((radius-r)/(radius*.18), 0, 1)
+            blend = .5 - .5*np.cos(np.pi*blend)
+            rings = .5 + .5*np.cos(2*np.pi*r*pitch_mm/ring_pitch_mm)
+            stroke = .78 + .18*rings  # shallow circular graining, not deep bowls
+            h = h*(1-blend) + stroke*blend
     return h
 
 
@@ -240,7 +270,14 @@ def _brick_height(u_mm, v_mm, width_mm, height_mm, joint_mm, bevel_mm, stagger, 
     raise ValueError('Unknown brick style')
 
 
-def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
+PATTERN_PITCH_DEFAULTS = {'hobnail': 1.0}
+
+
+def default_pitch(pattern):
+    return PATTERN_PITCH_DEFAULTS.get(pattern, .75)
+
+
+def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
            depth_mm=0.15, rotation=0.0, phase=0.0, softness=0.0,
            invert=False, circular=False, background=0.0, grooves=96,
            groove_width_mm=0.20, bevel_width_mm=0.08, top_width_mm=0.0, wave_meander_mm=0.0,
@@ -248,13 +285,16 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
            ribbon_curvature=0.35, rosette_harmonics=0.0, amplitude=0.35,
            secondary_pitch_mm=1.2, angle_deg=60.0, segments=12,
            line_width_mm=0.055, cube_gap_mm=0.04, cube_step_fraction=0.28, asanoha_style='faceted', fishscales_style='rounded', brick_width_mm=1.20, brick_height_mm=0.60,
-           brick_joint_mm=0.10, brick_bevel_mm=0.08, brick_row_offset=0.50, brick_style='faceted'):
+           brick_joint_mm=0.10, brick_bevel_mm=0.08, brick_row_offset=0.50, brick_style='faceted',
+           perlage_ring_pitch_mm=0.1, perlage_overlap=0.5):
     """Return uint16 height map and metadata. White = high, black = low.
 
     depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
     """
     if pattern not in PATTERNS:
         raise ValueError('Unknown pattern: ' + pattern)
+    if pitch_mm is None:
+        pitch_mm = default_pitch(pattern)
     if not 128 <= pixels <= 8192:
         raise ValueError('pixels must be between 128 and 8192')
     if size_mm <= 0 or pitch_mm <= 0 or depth_mm <= 0:
@@ -297,6 +337,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
             raise ValueError('Brick bevel must fit within the raised brick dimensions')
         if brick_style not in ENUM_FIELDS['brick_style']:
             raise ValueError('Invalid brick style')
+    if perlage_ring_pitch_mm <= 0 or not 0 <= perlage_overlap <= .5:
+        raise ValueError('Perlage ring pitch must be positive; overlap must be 0–0.5')
     # Pixel-center coordinates; no illumination, only geometry.
     coord = (np.arange(pixels, dtype=np.float32) + 0.5) * (size_mm / pixels) - size_mm / 2
     x = coord[None, :]
@@ -342,14 +384,7 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
         # Single center pixel should not have an arbitrary angular value.
         h = np.where(rr < size_mm / pixels, 0.5, h)
     elif pattern == 'basketweave':
-        # Alternating raised horizontal and vertical ribbons, with smooth crossovers.
-        iu = np.floor(u + phase).astype(np.int32)
-        iv = np.floor(v + phase).astype(np.int32)
-        a = np.sin(math.pi * frac(u + phase)) ** 2
-        b = np.sin(math.pi * frac(v + phase)) ** 2
-        over = ((iu + iv) % 2) == 0
-        h = np.where(over, .22 + .78 * a, .22 + .78 * b)
-        h = np.clip(h, 0, 1)
+        h = _woven_height(u + phase, v + phase, .22)
     elif pattern == 'barleycorn':
         # Stylized interlaced, elongated grain-shaped lobes (not a historic toolpath).
         row = np.floor(v + phase).astype(np.int32)
@@ -407,10 +442,7 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
         # Interlaced curved bands with independently adjustable bowing.
         ua = u + ribbon_curvature * np.sin(tau * v / 4) + phase
         va = v + ribbon_curvature * np.sin(tau * u / 4) + phase
-        parity = ((np.floor(ua).astype(np.int32) + np.floor(va).astype(np.int32)) % 2) == 0
-        hu = np.sin(math.pi * frac(ua))**2
-        hv = np.sin(math.pi * frac(va))**2
-        h = np.where(parity, .15 + .85 * hu, .15 + .85 * hv)
+        h = _woven_height(ua, va, .15)
     elif pattern == 'escargot':
         # Archimedean spiral: phase advances with radius and azimuth.
         h = .5 + .5 * np.cos(tau * (rr / pitch_mm - grooves * theta / tau + phase))
@@ -435,25 +467,18 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
         sector = .5 + .5 * np.cos(segments * theta)
         h = np.clip(rings * (.5 + .5 * sector), 0, 1)
     elif pattern == 'honeycomb':
-        # Nearest center on triangular lattice; regular hexagonal Voronoi cells.
-        qy = v / .866025403784
-        iy = np.floor(qy).astype(np.int32)
-        nearest = np.full((pixels,pixels), np.inf, dtype=np.float32)
-        for dy in (-1, 0, 1, 2):
-            j = iy + dy
-            cx = np.floor(u - .5*(j % 2) + .5) + .5*(j % 2)
-            dx = u - cx
-            dist = np.sqrt(dx*dx + (.866025403784*(qy-j))**2)
-            nearest = np.minimum(nearest, dist)
-        # Valley near cell edges, high near cell center.
-        h = np.clip((.59 - nearest) / max(.02, .59 * (1-softness*.85)), 0, 1)
+        # Signed distance to the six flat edges of the nearest hexagonal cell.
+        xx, yy = _hex_cell_coordinates(u, v)
+        edge = .5 - np.maximum.reduce([np.abs(xx),
+            np.abs(.5*xx + np.sqrt(3)/2*yy),
+            np.abs(-.5*xx + np.sqrt(3)/2*yy)])
+        # Recessed hexagonal joints, bevel, then a flat cell interior.
+        joint_half = .025
+        bevel = .10 + .30*softness
+        h = np.clip((edge-joint_half)/bevel, 0, 1)
     elif pattern == 'perlage':
-        # Staggered overlapping circular depressions, geometrical approximation.
-        rows = np.floor(v + phase).astype(np.int32)
-        dx = frac(u + .5*(rows % 2) + phase) - .5
-        dy = frac(v + phase) - .5
-        r = np.sqrt(dx*dx + dy*dy)
-        h = np.clip((r / .52)**(.8 + softness*2), 0, 1)
+        h = _perlage_height(u + phase, v + phase, pitch_mm,
+                            perlage_ring_pitch_mm, perlage_overlap)
     elif pattern == 'diamondlattice':
         t = math.radians(angle_deg)
         a = (x*np.cos(t) + y*np.sin(t))/pitch_mm
@@ -464,11 +489,11 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
     elif pattern == 'isometriccubes':
         h = _cube_height(u + phase, v + phase, pitch_mm, cube_gap_mm, cube_step_fraction)
     elif pattern == 'fanscallop':
-        row = np.floor(v + phase).astype(np.int32)
-        dx = frac(u + .5*(row%2) + phase) - .5
-        dy = frac(v + phase)
-        radial = np.sqrt(dx*dx + dy*dy)
-        h = .5 + .5*np.cos(tau*(radial * (1+amplitude) + phase))
+        xx, t, distance = _scallop_coordinates(u + phase, v + phase)
+        radial = np.hypot(xx, t)
+        ribs = .5 + .5*np.cos(tau*radial*(1+amplitude))
+        envelope = np.sin(np.pi*t)**2 * np.cos(np.pi*xx)**2
+        h = np.clip(distance/.035, 0, 1) * (.15 + .85*envelope*ribs)
     elif pattern == 'asanoha':
         h = _asanoha_height(u + phase, v + phase, pitch_mm, line_width_mm, asanoha_style)
 
@@ -492,7 +517,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=0.75,
                 line_width_mm=line_width_mm, cube_gap_mm=cube_gap_mm, cube_step_fraction=cube_step_fraction, asanoha_style=asanoha_style, fishscales_style=fishscales_style, brick_width_mm=brick_width_mm,
                 brick_height_mm=brick_height_mm, brick_joint_mm=brick_joint_mm,
                 brick_bevel_mm=brick_bevel_mm, brick_row_offset=brick_row_offset,
-                brick_style=brick_style, grayscale='white=highest; black=deepest',
+                brick_style=brick_style, perlage_ring_pitch_mm=perlage_ring_pitch_mm,
+                perlage_overlap=perlage_overlap, grayscale='white=highest; black=deepest',
                 pixel_pitch_mm=size_mm/pixels,
                 note='Depth is design metadata; calibrate laser material removal experimentally.')
     return out, meta
@@ -528,7 +554,7 @@ PATTERN_FIELDS = {
     'rosette': ('pitch_mm', 'grooves', 'phase', 'amplitude', 'rosette_harmonics'),
     'sectorrings': ('pitch_mm', 'segments', 'phase'),
     'honeycomb': ('pitch_mm', 'rotation', 'softness'),
-    'perlage': ('pitch_mm', 'rotation', 'phase', 'softness'),
+    'perlage': ('pitch_mm', 'rotation', 'phase', 'perlage_ring_pitch_mm', 'perlage_overlap'),
     'diamondlattice': ('pitch_mm', 'angle_deg', 'phase'),
     'isometriccubes': ('pitch_mm', 'rotation', 'phase', 'cube_gap_mm', 'cube_step_fraction'),
     'fanscallop': ('pitch_mm', 'rotation', 'phase', 'amplitude'),
@@ -537,6 +563,8 @@ PATTERN_FIELDS = {
 
 }
 FIELD_SPECS = {
+    'perlage_ring_pitch_mm': ('Perlage ring spacing (mm)', '0.1'),
+    'perlage_overlap': ('Perlage overlap (0–0.5)', '0.5'),
     'size_mm': ('Area width (mm)', '28.5'),
     'pixels': ('Output pixels / side', '2048'),
     'depth_mm': ('Target depth (mm)', '0.15'),
@@ -581,7 +609,7 @@ def run_gui():
         raise SystemExit('Tkinter is unavailable. Install python3-tk or use --cli.') from e
 
     root = tk.Tk()
-    root.title('Watch Dial Pattern Generator v4.2.5')
+    root.title('Watch Dial Pattern Generator v4.3')
     root.geometry('980x760')
     root.minsize(800, 580)
     outer = ttk.Frame(root, padding=14)
@@ -592,14 +620,15 @@ def run_gui():
     right.pack(side='left', fill='both', expand=True)
     ttk.Label(left, text='Pattern parameters', font=('TkDefaultFont', 13, 'bold')).pack(anchor='w', pady=(0, 12))
     ttk.Label(left, text='Pattern').pack(anchor='w')
-    pattern_combo = ttk.Combobox(left, state='readonly', width=33, values=list(PATTERNS.values()))
+    pattern_choice = tk.StringVar()
+    pattern_combo = ttk.Combobox(left, textvariable=pattern_choice, state='readonly', width=33, values=list(PATTERNS.values()))
     startup_pattern_index = 0
     pattern_combo.current(startup_pattern_index)
     pattern_combo.pack(fill='x', pady=(2, 10))
     # Scroll the parameter column: small macOS screens can still access every control.
     scroll_holder = ttk.Frame(left)
     scroll_holder.pack(fill='x')
-    field_canvas = tk.Canvas(scroll_holder, width=290, height=430, highlightthickness=0)
+    field_canvas = tk.Canvas(scroll_holder, width=290, height=300, highlightthickness=0)
     field_scroll = ttk.Scrollbar(scroll_holder, orient='vertical', command=field_canvas.yview)
     field_canvas.configure(yscrollcommand=field_scroll.set)
     field_canvas.pack(side='left', fill='y')
@@ -631,11 +660,21 @@ def run_gui():
     status = tk.StringVar(value='Preview is a reduced-resolution sample.')
     ttk.Label(right, textvariable=status, wraplength=480).pack(anchor='w', pady=8)
     right._preview_image = None
+    pitch_values = {}
+    pitch_pattern = None
+    preview_params = None
 
     def selected_pattern():
         return list(PATTERNS)[pattern_combo.current()]
 
     def refresh_fields(event=None):
+        nonlocal pitch_pattern
+        pattern = selected_pattern()
+        if pattern != pitch_pattern:
+            if pitch_pattern is not None:
+                pitch_values[pitch_pattern] = values['pitch_mm'].get()
+            values['pitch_mm'].set(pitch_values.get(pattern, str(default_pitch(pattern))))
+            pitch_pattern = pattern
         for row in field_rows.values():
             row.pack_forget()
         active = COMMON_FIELDS + PATTERN_FIELDS[selected_pattern()]
@@ -663,16 +702,27 @@ def run_gui():
         return kw
 
     def update_preview():
+        nonlocal preview_params
         try:
-            arr, meta = render(**params(preview=True))
+            current_params = params(preview=True)
+            arr, meta = render(**current_params)
             im = Image.fromarray((arr / 257).astype(np.uint8))
             im.thumbnail((480, 480))
             photo = ImageTk.PhotoImage(im)
             preview_label.configure(image=photo)
             right._preview_image = photo
+            preview_params = current_params
             status.set(f"{meta['pattern_name']} | preview {meta['pixels']} px | white = high")
         except Exception as e:
             status.set('Preview error: ' + str(e))
+
+    def preview_on_focus_out(event):
+        try:
+            if params(preview=True) == preview_params and not status.get().startswith('Preview error:'):
+                return
+        except (ValueError, TypeError):
+            pass  # Let update_preview report invalid input and retain the image.
+        update_preview()
 
     def export():
         try:
@@ -693,11 +743,14 @@ def run_gui():
             root.config(cursor='')
 
     def reset_all():
+        nonlocal pitch_pattern
         # Reset hidden fields as well as currently visible fields, then re-render.
         for key, (_, default) in FIELD_SPECS.items():
             values[key].set(default)
         invert.set(False)
         circular.set(False)
+        pitch_values.clear()
+        pitch_pattern = None
         pattern_combo.current(startup_pattern_index)
         field_canvas.yview_moveto(0)
         refresh_fields()
@@ -705,15 +758,32 @@ def run_gui():
 
     pattern_combo.bind('<<ComboboxSelected>>', refresh_fields)
     for key, widget in field_inputs.items():
+        widget.bind('<FocusOut>', preview_on_focus_out, add='+')
         if key in ENUM_FIELDS:
             widget.bind('<<ComboboxSelected>>', lambda event: update_preview())
     circular.trace_add('write', lambda *_: refresh_fields())
+    invert.trace_add('write', lambda *_: update_preview())
     ttk.Button(left, text='Update preview', command=update_preview).pack(fill='x', pady=(12, 5))
+    def inspect_relief():
+        try:
+            from inspection import open_inspection
+            kw = params()
+            arr, meta = render(**kw)
+            session = open_inspection(root, arr, meta)
+            inspection_updates.sessions.append(session)
+        except Exception as e:
+            messagebox.showerror('Inspection failed', str(e))
+
+    ttk.Button(left, text='Inspect enlarged / 3D', command=inspect_relief).pack(fill='x', pady=(0, 5))
     ttk.Button(left, text='Reset to defaults', command=reset_all).pack(fill='x', pady=(0, 5))
     ttk.Button(left, text='Export PNG + settings', command=export).pack(fill='x')
-    ttk.Label(left, text=('White = highest surface; black = deepest.\nNo simulated lighting.\n\n'
+    ttk.Label(left, text=('White = highest surface; black = deepest.\nExports contain height only.\n\n'
         'Only relevant pattern controls are shown.\nTapisserie groove and bevel widths are independent.\n'
         'Asanoha supports engraved, faceted, and rounded relief styles.\nFish Scales supports engraved, faceted, and rounded relief styles.'), wraplength=270).pack(anchor='w', pady=14)
+    from inspection import InspectionUpdates
+    inspection_updates = InspectionUpdates(root, params, render, status.set)
+    for variable in (*values.values(), pattern_choice, invert, circular):
+        variable.trace_add('write', inspection_updates.schedule)
     refresh_fields()
     root.mainloop()
 
@@ -725,7 +795,8 @@ def main():
     parser.add_argument('--pattern', choices=list(PATTERNS), default='hobnail')
     parser.add_argument('--size-mm', type=float, default=28.5)
     parser.add_argument('--pixels', type=int, default=2048)
-    parser.add_argument('--pitch-mm', type=float, default=.75)
+    parser.add_argument('--pitch-mm', type=float, default=None,
+                        help='Pattern pitch in mm (default: 1.0 for Hobnail, 0.75 otherwise)')
     parser.add_argument('--depth-mm', type=float, default=.15)
     parser.add_argument('--rotation', type=float, default=0)
     parser.add_argument('--phase', type=float, default=0)
@@ -758,6 +829,8 @@ def main():
     parser.add_argument('--brick-bevel-mm', type=float, default=.08)
     parser.add_argument('--brick-row-offset', type=float, default=.5)
     parser.add_argument('--brick-style', choices=ENUM_FIELDS['brick_style'], default='faceted')
+    parser.add_argument('--perlage-ring-pitch-mm', type=float, default=.1)
+    parser.add_argument('--perlage-overlap', type=float, default=.5)
     parser.add_argument('--output', default='watch_dial_heightmap.png')
     args = parser.parse_args()
     if args.gui or (not args.cli and len(__import__('sys').argv) == 1):
