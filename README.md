@@ -82,17 +82,7 @@ xvfb-run -a python3 -m tests.run_tests
 The GUI test requires a working Tkinter installation and graphical display (or Xvfb).
 It is not a native macOS UI rendering test.
 
-## v4.3 — Relief geometry and enlarged inspection
-
-- Basketweave and Panier ribbons now descend continuously to common recessed cell boundaries, replacing height jumps at crossovers. This deliberately changes their appearance.
-- Fish Scales uses cells bounded by consecutive staggered arcs rather than resetting at horizontal rows. All three styles share recessed arc boundaries. Fan/Scallop uses the same continuous cell layout with internal radial ribs.
-- Honeycomb now has flat hexagonal plateaus, recessed joints and linear bevels. Joint width is 5% of pitch; bevel width on each side is `(0.10 + 0.30 * softness) * pitch`. It replaces the old circular mounds.
-- Perlage now approximates overlapping shallow circular grain strokes with feathered rims. Ring spacing (`--perlage-ring-pitch-mm`, default 0.1 mm) and overlap (`--perlage-overlap`, default 0.5, range 0–0.5) are independent controls. It is a stylized relief approximation of graining, not a simulation of abrasive tooling. Heights remain within 0.78–1, so relief uses at most 22% of the target depth range; output is intentionally not contrast-normalized.
-- **Inspect enlarged / 3D** opens an interactive PyVista window linked to the current full output-resolution map. Drag to orbit/tilt, Shift-drag to pan, and use the wheel to zoom (right-drag also zooms). Crop controls update on release; depth exaggeration updates continuously. Camera position is preserved when changing crop, detail, coloring, or exaggeration. At 1× exaggeration, X/Y and design Z share millimeter units. Crop centers clamp at image edges. Open viewers update automatically about 350 ms after you pause editing a pattern parameter, including pattern selection, inversion, circular masking, size, resolution, and target depth. Full-resolution rendering runs in the background; large maps can take longer. Incomplete or invalid entries retain the last valid surface and show a status message in the generator. Older render results are discarded when newer edits arrive. Rotation, pan, zoom, projection, coloring, mesh detail, and depth exaggeration are preserved; crop controls clamp to the new dial size when needed.
-- Mesh detail offers Fast (201), Balanced (401), and Fine (801) samples per side, capped by the source crop resolution. Samples retain their actual pixel-center positions and depth; no smoothing is applied to the geometry. Use a small crop or press **G** for the full-resolution nearest-neighbor grayscale height map to inspect narrow grooves. Press **G** again to restore the 3D camera.
-- Camera shortcuts: **T** top, **F** front, **I** isometric, **R** fit/reset framing, **P** perspective/orthographic. **C** toggles depth coloring. **S** opens a save dialog for a labeled inspection screenshot. These screenshots never change the 16-bit engraving PNG. Regenerate older exported maps to adopt the corrected geometry.
-
-### LightBurn 2.1 / 100 W JPT MOPA / F190 lens workflow
+## LightBurn 2.1 / 100 W JPT MOPA / F190 lens workflow
 
 LightBurn 2.1 supports 16-bit depth maps in **3D Sliced** image mode for Galvo devices. Import the primary 16-bit PNG, set its physical width to the exported `size_mm`, and use 3D Sliced for layered relief. The `_8bit.png` file is a compatibility copy; the shaded inspection image is not an engraving input.
 
@@ -103,6 +93,16 @@ At 28.5 mm / 2048 pixels, raster spacing is approximately 13.9 µm. The default 
 Circular mode fills exterior pixels with the selected grayscale level; it does not produce an exclusion mask. Use an appropriate boundary/crop in the engraving workflow, especially because the default black exterior denotes the deepest level.
 
 References: [LightBurn 2.1 Galvo cut settings](https://docs.lightburnsoftware.com/2.1/Reference/CutSettingsEditor/GalvoSpecificCutSettings/) and [3D Sliced engraving guide](https://docs.lightburnsoftware.com/2.1/Guides/3DSlicedImage/).
+
+## v4.3 — Relief geometry and enlarged inspection
+
+- Basketweave and Panier ribbons now descend continuously to common recessed cell boundaries, replacing height jumps at crossovers. This deliberately changes their appearance.
+- Fish Scales uses cells bounded by consecutive staggered arcs rather than resetting at horizontal rows. All three styles share recessed arc boundaries. Fan/Scallop uses the same continuous cell layout with internal radial ribs.
+- Honeycomb now has flat hexagonal plateaus, recessed joints and linear bevels. Joint width is 5% of pitch; bevel width on each side is `(0.10 + 0.30 * softness) * pitch`. It replaces the old circular mounds.
+- Perlage now approximates overlapping shallow circular grain strokes with feathered rims. Ring spacing (`--perlage-ring-pitch-mm`, default 0.1 mm) and overlap (`--perlage-overlap`, default 0.5, range 0–0.5) are independent controls. It is a stylized relief approximation of graining, not a simulation of abrasive tooling. Heights remain within 0.78–1, so relief uses at most 22% of the target depth range; output is intentionally not contrast-normalized.
+- **Inspect enlarged / 3D** opens an interactive PyVista window linked to the current full output-resolution map. Drag to orbit/tilt, Shift-drag to pan, and use the wheel to zoom (right-drag also zooms). Crop controls update on release; depth exaggeration updates continuously. Camera position is preserved when changing crop, detail, coloring, or exaggeration. At 1× exaggeration, X/Y and design Z share millimeter units. Crop centers clamp at image edges. Open viewers update automatically about 350 ms after you pause editing a pattern parameter, including pattern selection, inversion, circular masking, size, resolution, and target depth. Full-resolution rendering runs in the background; large maps can take longer. Incomplete or invalid entries retain the last valid surface and show a status message in the generator. Older render results are discarded when newer edits arrive. Rotation, pan, zoom, projection, coloring, mesh detail, and depth exaggeration are preserved; crop controls clamp to the new dial size when needed.
+- Mesh detail offers Fast (201), Balanced (401), and Fine (801) samples per side, capped by the source crop resolution. Samples retain their actual pixel-center positions and depth; no smoothing is applied to the geometry. Use a small crop or press **G** for the full-resolution nearest-neighbor grayscale height map to inspect narrow grooves. Press **G** again to restore the 3D camera.
+- Camera shortcuts: **T** top, **F** front, **I** isometric, **R** fit/reset framing, **P** perspective/orthographic. **C** toggles depth coloring. **S** opens a save dialog for a labeled inspection screenshot. These screenshots never change the 16-bit engraving PNG. Regenerate older exported maps to adopt the corrected geometry.
 
 ## v4.2.5 — Brick and Reset
 
