@@ -1,4 +1,4 @@
-# Watch Dial Pattern Generator v4
+# Watch Dial Pattern Generator v0
 
 A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 24 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
@@ -94,7 +94,7 @@ Circular mode fills exterior pixels with the selected grayscale level; it does n
 
 References: [LightBurn 2.1 Galvo cut settings](https://docs.lightburnsoftware.com/2.1/Reference/CutSettingsEditor/GalvoSpecificCutSettings/) and [3D Sliced engraving guide](https://docs.lightburnsoftware.com/2.1/Guides/3DSlicedImage/).
 
-## v4.3 — Relief geometry and enlarged inspection
+## v0.2 — Relief geometry and enlarged inspection
 
 - Basketweave and Panier ribbons now descend continuously to common recessed cell boundaries, replacing height jumps at crossovers. This deliberately changes their appearance.
 - Fish Scales uses cells bounded by consecutive staggered arcs rather than resetting at horizontal rows. All three styles share recessed arc boundaries. Fan/Scallop uses the same continuous cell layout with internal radial ribs.
@@ -104,7 +104,7 @@ References: [LightBurn 2.1 Galvo cut settings](https://docs.lightburnsoftware.co
 - Mesh detail offers Fast (201), Balanced (401), and Fine (801) samples per side, capped by the source crop resolution. Samples retain their actual pixel-center positions and depth; no smoothing is applied to the geometry. Use a small crop or press **G** for the full-resolution nearest-neighbor grayscale height map to inspect narrow grooves. Press **G** again to restore the 3D camera.
 - Camera shortcuts: **T** top, **F** front, **I** isometric, **R** fit/reset framing, **P** perspective/orthographic. **C** toggles depth coloring. **S** opens a save dialog for a labeled inspection screenshot. These screenshots never change the 16-bit engraving PNG. Regenerate older exported maps to adopt the corrected geometry.
 
-## v4.2.5 — Brick and Reset
+## v0.1.5 — Brick and Reset
 
 The Brick / Running Bond pattern uses exact millimeter-defined repeating rectangular
 geometry, with alternating staggered courses. Available styles: engraved (flat
@@ -128,25 +128,25 @@ python3 dial_patterns.py --cli --pattern brick --brick-width-mm 1.2 \
 Use `python3 -m tests.run_tests` to run the expanded regression and GUI test suite.
 Grayscale denotes relative height, not a calibrated laser-removal depth.
 
-## v4.2.4 — Fish Scales relief update
+## v0.1.4 — Fish Scales relief update
 
 - Replaced the old arc-ridge Fish Scales generator with true relief geometry.
 - Added three selectable Fish Scales styles: engraved, faceted, and rounded.
 - Added GUI/CLI support and regression tests for the new Fish Scales relief styles.
 
-## v4.2.3 — Asanoha multiple relief styles
+## v0.1.3 — Asanoha multiple relief styles
 
 - Added three selectable Asanoha styles: engraved, faceted, and rounded.
 - Added GUI and CLI support for choosing the Asanoha style.
 - Added regression tests verifying the styles remain distinct and that relief styles produce meaningful mid-tone depth variation.
 
-## v4.2.2 — Asanoha relief update
+## v0.1.2 — Asanoha relief update
 
 - Changed Asanoha from a line-engraving-like pattern to a true faceted relief height map with sculpted surfaces between the grooves.
 - Retained controllable line width while adding meaningful Z variation across the non-groove cells.
 - Added regression tests to confirm the relief contains substantial mid-tone height variation beyond the groove network.
 
-## v4.2.1 — corrected geometric families
+## v0.1.1 — corrected geometric families
 
 - **Asanoha:** constructed from repeated hexagonal hemp-leaf line segments, including six radial arms, diagonal leaf ribs and perimeter connections. The `--line-width-mm` argument controls actual recessed stroke width.
 - **Isometric Cubes:** three rhombus faces tessellate a hexagonal cell. They occupy three distinct height terraces (no directional lighting). `--cube-gap-mm` controls recessed boundaries; `--cube-step-fraction` controls physical relative-height differences.
@@ -162,9 +162,9 @@ python3 dial_patterns.py --cli --pattern isometriccubes --pitch-mm .8 --cube-gap
 
 Note: The stepped cube surfaces are actual height terraces; the resulting physical relief will not appear identical to a conventionally shaded 3D cube graphic under all viewing conditions.
 
-## v4.2: refined pattern geometry
+## v0.1: refined pattern geometry
 
-The v4.2 release retains all 24 patterns and adds pattern-specific parameters:
+The v0.1 release retains all 24 patterns and adds pattern-specific parameters:
 
 - **Hobnail:** `--top-width-mm` makes a mathematically flat truncated-pyramid apex (0 = pointed).
 - **Wave:** `--wave-meander-mm` controls lateral waviness independently from `--ridge-height-fraction` (0 = flat, 1 = full grayscale range).
