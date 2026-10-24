@@ -1,5 +1,7 @@
 # Watch Dial Pattern Generator
 
+Current version: **1.0.0**, the first official published release.
+
 A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 24 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
 ## Donate/Sponsor
@@ -90,6 +92,8 @@ To see all available options for the CLI, use the `-h` or `--help` command line 
 
 Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, and `brick`.
 
+[View the pattern catalog (PNG)](pattern_catalog.png) for a visual guide to all 24 patterns.
+
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
 The GUI remembers edited pitch values per pattern until **Reset to defaults**.
@@ -147,6 +151,12 @@ At 28.5 mm / 2048 pixels, raster spacing is approximately 13.9 µm. The default 
 Circular mode fills exterior pixels with the selected grayscale level; it does not produce an exclusion mask. Use an appropriate boundary/crop in the engraving workflow, especially because the default black exterior denotes the deepest level.
 
 References: [LightBurn 2.1 Galvo cut settings](https://docs.lightburnsoftware.com/2.1/Reference/CutSettingsEditor/GalvoSpecificCutSettings/) and [3D Sliced engraving guide](https://docs.lightburnsoftware.com/2.1/Guides/3DSlicedImage/).
+
+## v1.0.0 — First official release
+
+- Includes all 24 patterns, desktop and command-line interfaces, live 3D inspection, and PNG plus settings exports.
+- Adds plain-language hover tips for every main GUI button, input field, dropdown, and checkbox.
+- Displays version 1.0.0 in the GUI title. Run `python dial_patterns.py --version` to check the version from the command line.
 
 ## v0.2 — Relief geometry and enlarged inspection
 
