@@ -1,17 +1,24 @@
 # Watch Dial Pattern Generator v4
 
-A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 23 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied.
+A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 24 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
 ## Install and run (macOS)
 
-Use Python 3.10+ with Tkinter enabled. From the extracted folder:
+Use Python 3.12 or 3.13 with Tkinter enabled and available VTK wheels. From the project folder:
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 dial_patterns.py
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python dial_patterns.py
 ```
 
 If `import tkinter` fails, install a Python distribution with Tcl/Tk support (for example the official python.org macOS installer). CLI mode does not require an active display, though Pillow's ImageTk import still requires Tkinter to be installed.
+
+After creating the environment, you can also launch directly with
+`.venv/bin/python dial_patterns.py`. PyVista uses VTK for the interactive inspection window;
+no Qt installation is needed. Inspection opens in its own process so the generator remains
+responsive. Closing the generator also closes its inspection windows.
 
 ## CLI
 
@@ -26,6 +33,13 @@ New patterns: `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, 
 
 New controls include `--amplitude`, `--secondary-pitch-mm`, `--angle-deg`, and `--segments`. The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
+The grayscale preview refreshes when you edit a parameter and move focus to another
+field. Pattern, style, and checkbox changes refresh immediately. Invalid entries
+keep the last valid preview visible and show an error in the status text.
+
+Clous de Paris / Hobnail defaults to a 1 mm pitch; other patterns default to 0.75 mm.
+The GUI remembers edited pitch values per pattern until **Reset to defaults**.
+
 ## Interpretation and limitations
 
 - **White = highest surface; black = deepest recess.** Exported 16-bit PNG contains uint16 grayscale values. The 8-bit PNG is for easier software compatibility.
@@ -37,14 +51,14 @@ New controls include `--amplitude`, `--secondary-pitch-mm`, `--angle-deg`, and `
 ## Tests
 
 ```bash
-python3 test_patterns.py
+python3 -m tests.test_patterns
 ```
 
-This tests all 23 generators and PNG exports and creates `pattern_catalog.png`.
+This tests all 24 generators and PNG exports and creates `pattern_catalog.png`.
 
 ## Full test suite (including real Tkinter GUI interaction)
 
-The test runner exercises all 23 mathematical pattern renderers and GUI workflows.
+The test runner exercises all 24 mathematical pattern renderers and GUI workflows.
 It opens a real Tk window, selects every pattern, verifies visible parameter controls,
 updates a preview, invokes the GUI export button, and verifies 8/16-bit PNG and JSON output.
 Native save dialogs and message boxes are mocked to make tests deterministic.
@@ -52,13 +66,13 @@ Native save dialogs and message boxes are mocked to make tests deterministic.
 On macOS with an active desktop session:
 
 ```bash
-python3 run_tests.py
+python3 -m tests.run_tests
 ```
 
 On headless Linux (requires Xvfb):
 
 ```bash
-xvfb-run -a python3 run_tests.py
+xvfb-run -a python3 -m tests.run_tests
 ```
 
 The GUI test requires a working Tkinter installation and graphical display (or Xvfb).
@@ -85,7 +99,7 @@ python3 dial_patterns.py --cli --pattern brick --brick-width-mm 1.2 \
   --output brick_faceted.png
 ```
 
-Use `python3 run_tests.py` to run the expanded regression and GUI test suite.
+Use `python3 -m tests.run_tests` to run the expanded regression and GUI test suite.
 Grayscale denotes relative height, not a calibrated laser-removal depth.
 
 ## v4.2.4 — Fish Scales relief update
@@ -111,7 +125,7 @@ Grayscale denotes relative height, not a calibrated laser-removal depth.
 - **Asanoha:** constructed from repeated hexagonal hemp-leaf line segments, including six radial arms, diagonal leaf ribs and perimeter connections. The `--line-width-mm` argument controls actual recessed stroke width.
 - **Isometric Cubes:** three rhombus faces tessellate a hexagonal cell. They occupy three distinct height terraces (no directional lighting). `--cube-gap-mm` controls recessed boundaries; `--cube-step-fraction` controls physical relative-height differences.
 - Both share a regular triangular tiling only; they no longer share the same synthetic wave-form algorithm.
-- New tests: `test_distinct_lattices.py` plus additional GUI field visibility checks.
+- New tests: `tests/test_distinct_lattices.py` plus additional GUI field visibility checks.
 
 Examples:
 
@@ -124,7 +138,7 @@ Note: The stepped cube surfaces are actual height terraces; the resulting physic
 
 ## v4.2: refined pattern geometry
 
-The v4.2 release retains all 23 patterns and adds pattern-specific parameters:
+The v4.2 release retains all 24 patterns and adds pattern-specific parameters:
 
 - **Hobnail:** `--top-width-mm` makes a mathematically flat truncated-pyramid apex (0 = pointed).
 - **Wave:** `--wave-meander-mm` controls lateral waviness independently from `--ridge-height-fraction` (0 = flat, 1 = full grayscale range).
@@ -143,4 +157,27 @@ python3 dial_patterns.py --cli --pattern hobnail --pitch-mm 0.75 --top-width-mm 
 python3 dial_patterns.py --cli --pattern wave --pitch-mm 0.75 --wave-meander-mm 0.22 --ridge-height-fraction 0.6 --output wave.png
 ```
 
-Run the expanded suite (including GUI interaction tests): `python3 run_tests.py` (on headless Linux: `xvfb-run -a python3 run_tests.py`).
+Run the expanded suite (including GUI interaction tests): `python3 -m tests.run_tests` (on headless Linux: `xvfb-run -a python3 -m tests.run_tests`).
+
+
+## v4.3 — Relief geometry and enlarged inspection
+
+- Basketweave and Panier ribbons now descend continuously to common recessed cell boundaries, replacing height jumps at crossovers. This deliberately changes their appearance.
+- Fish Scales uses cells bounded by consecutive staggered arcs rather than resetting at horizontal rows. All three styles share recessed arc boundaries. Fan/Scallop uses the same continuous cell layout with internal radial ribs.
+- Honeycomb now has flat hexagonal plateaus, recessed joints and linear bevels. Joint width is 5% of pitch; bevel width on each side is `(0.10 + 0.30 * softness) * pitch`. It replaces the old circular mounds.
+- Perlage now approximates overlapping shallow circular grain strokes with feathered rims. Ring spacing (`--perlage-ring-pitch-mm`, default 0.1 mm) and overlap (`--perlage-overlap`, default 0.5, range 0–0.5) are independent controls. It is a stylized relief approximation of graining, not a simulation of abrasive tooling. Heights remain within 0.78–1, so relief uses at most 22% of the target depth range; output is intentionally not contrast-normalized.
+- **Inspect enlarged / 3D** opens an interactive PyVista window linked to the current full output-resolution map. Drag to orbit/tilt, Shift-drag to pan, and use the wheel to zoom (right-drag also zooms). Crop controls update on release; depth exaggeration updates continuously. Camera position is preserved when changing crop, detail, coloring, or exaggeration. At 1× exaggeration, X/Y and design Z share millimeter units. Crop centers clamp at image edges. Open viewers update automatically about 350 ms after you pause editing a pattern parameter, including pattern selection, inversion, circular masking, size, resolution, and target depth. Full-resolution rendering runs in the background; large maps can take longer. Incomplete or invalid entries retain the last valid surface and show a status message in the generator. Older render results are discarded when newer edits arrive. Rotation, pan, zoom, projection, coloring, mesh detail, and depth exaggeration are preserved; crop controls clamp to the new dial size when needed.
+- Mesh detail offers Fast (201), Balanced (401), and Fine (801) samples per side, capped by the source crop resolution. Samples retain their actual pixel-center positions and depth; no smoothing is applied to the geometry. Use a small crop or press **G** for the full-resolution nearest-neighbor grayscale height map to inspect narrow grooves. Press **G** again to restore the 3D camera.
+- Camera shortcuts: **T** top, **F** front, **I** isometric, **R** fit/reset framing, **P** perspective/orthographic. **C** toggles depth coloring. **S** opens a save dialog for a labeled inspection screenshot. These screenshots never change the 16-bit engraving PNG. Regenerate older exported maps to adopt the corrected geometry.
+
+### LightBurn 2.1 / 100 W JPT MOPA / F190 lens workflow
+
+LightBurn 2.1 supports 16-bit depth maps in **3D Sliced** image mode for Galvo devices. Import the primary 16-bit PNG, set its physical width to the exported `size_mm`, and use 3D Sliced for layered relief. The `_8bit.png` file is a compatibility copy; the shaded inspection image is not an engraving input.
+
+White is the highest surface and black is the deepest recess. `depth_mm` describes the intended relief span and scales the inspection geometry; it does not set material removal in LightBurn. Pass count, material, focus, speed, power, frequency and pulse width require coupon calibration. A 100 W rating and F190 focal length alone do not establish spot size or achievable detail, so this application does not prescribe laser parameters from those specifications.
+
+At 28.5 mm / 2048 pixels, raster spacing is approximately 13.9 µm. The default 100 µm Perlage ring spacing has about 7.2 pixels per cycle; enlarge ring spacing or increase output resolution when inspecting fine graining. Raster spacing is not the laser spot size or LightBurn scan interval. Inspect minimum feature sizes against measured engraving trials.
+
+Circular mode fills exterior pixels with the selected grayscale level; it does not produce an exclusion mask. Use an appropriate boundary/crop in the engraving workflow, especially because the default black exterior denotes the deepest level.
+
+References: [LightBurn 2.1 Galvo cut settings](https://docs.lightburnsoftware.com/2.1/Reference/CutSettingsEditor/GalvoSpecificCutSettings/) and [3D Sliced engraving guide](https://docs.lightburnsoftware.com/2.1/Guides/3DSlicedImage/).
