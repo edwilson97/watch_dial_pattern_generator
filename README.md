@@ -80,6 +80,8 @@ python3 dial_patterns.py --cli --pattern honeycomb --pitch-mm 0.8 --output honey
 python3 dial_patterns.py --help
 ```
 
+To see all available options for the CLI, use the `-h` or `--help` command line parameter.
+
 Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, and `brick`.
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
