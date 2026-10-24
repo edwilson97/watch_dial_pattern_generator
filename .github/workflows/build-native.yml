@@ -61,11 +61,16 @@ jobs:
           mkdir dist/package
           mv dist/WatchDialPatternGenerator.app dist/dependencies.txt dist/package/
           ditto -c -k --sequesterRsrc dist/package dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip
+      - name: Verify macOS archive extraction
+        if: runner.os == 'macOS'
+        run: |
+          ditto -x -k dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip "$RUNNER_TEMP/archive-check"
+          test -x "$RUNNER_TEMP/archive-check/WatchDialPatternGenerator.app/Contents/MacOS/WatchDialPatternGenerator"
+          codesign --verify --deep --strict "$RUNNER_TEMP/archive-check/WatchDialPatternGenerator.app"
       - name: Upload download
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: WatchDialPatternGenerator-${{ matrix.platform }}
           path: dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip
+          archive: false
           if-no-files-found: error
-          compression-level: 0
           retention-days: 30
