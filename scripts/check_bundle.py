@@ -19,7 +19,7 @@ env = os.environ.copy()
 env.pop('PYTHONPATH', None)
 env.pop('PYTHONHOME', None)
 if sys.platform == 'win32':
-    windows = Path(env['SystemRoot'])
+    windows = Path(env['SYSTEMROOT'])
     env['PATH'] = os.pathsep.join([str(windows), str(windows/'System32')])
 else:
     env['PATH'] = '/usr/bin:/bin'
