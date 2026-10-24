@@ -1,0 +1,71 @@
+name: Build native apps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2022
+          - platform: macos-arm64
+            runner: macos-15
+          - platform: macos-x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Test geometry, exports, and bundle helpers
+        run: >-
+          python -m unittest
+          tests.test_geometry tests.test_distinct_lattices
+          tests.test_fishscales_relief tests.test_brick
+          tests.test_relief_inspection tests.test_packaging -v
+      - name: Build desktop app
+        run: python -m PyInstaller --clean --noconfirm WatchDialPatternGenerator.spec
+      - name: Smoke test packaged app
+        run: python scripts/check_bundle.py
+      - name: Record bundled dependencies
+        shell: bash
+        run: python -m pip freeze > dist/dependencies.txt
+      - name: Archive Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          Compress-Archive -Path dist/WatchDialPatternGenerator,dist/dependencies.txt
+          -DestinationPath dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip
+      - name: Archive macOS app
+        if: runner.os == 'macOS'
+        run: |
+          mkdir dist/package
+          mv dist/WatchDialPatternGenerator.app dist/dependencies.txt dist/package/
+          ditto -c -k --sequesterRsrc dist/package dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip
+      - name: Upload download
+        uses: actions/upload-artifact@v4
+        with:
+          name: WatchDialPatternGenerator-${{ matrix.platform }}
+          path: dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

@@ -14,6 +14,54 @@ If this app helps with your watchmaking projects, consider supporting its develo
 
 Copyright (c) 2026 Bridge Watches LLC. Licensed under the [MIT License](LICENSE).
 
+## Standalone Windows and macOS downloads
+
+The [Build native apps workflow](https://github.com/edwilson97/watch_dial_pattern_generator/actions/workflows/build-native.yml)
+packages the app with Python, Tkinter, NumPy, Pillow, PyVista, and VTK included.
+Users do not need to install Python or run `pip`.
+
+To create downloads, push this workflow to GitHub, then open **Actions → Build native
+apps → Run workflow**. It also runs on pull requests, pushes to `main`/`master`, and
+tags beginning with `v`. After a successful run, download the matching artifact
+from the run's **Artifacts** section and extract it. Each artifact contains a ZIP:
+
+| Download | Platform | Launch |
+| --- | --- | --- |
+| `WatchDialPatternGenerator-windows-x64.zip` | 64-bit Windows | Extract the entire folder and open `WatchDialPatternGenerator.exe` inside it. Keep `_internal` beside the executable. |
+| `WatchDialPatternGenerator-macos-arm64.zip` | Apple Silicon Mac, macOS 15 or newer | Extract and open `WatchDialPatternGenerator.app`. |
+| `WatchDialPatternGenerator-macos-x64.zip` | Intel Mac, macOS 15 or newer | Extract and open `WatchDialPatternGenerator.app`. |
+
+Artifacts are kept for 30 days. For permanent public downloads, a maintainer can
+attach the ZIP files to a GitHub Release. These builds are unsigned and macOS builds
+are not notarized, so Windows SmartScreen or macOS Gatekeeper may require approval.
+On macOS, use **System Settings → Privacy & Security → Open Anyway** if you trust
+the downloaded build. Signing and notarization require separate certificates and
+credentials, which this workflow does not configure.
+
+The apps launch without a terminal window. On macOS, CLI arguments can also be
+passed directly to `WatchDialPatternGenerator.app/Contents/MacOS/WatchDialPatternGenerator`.
+For a Windows CLI with terminal output, use the Python installation instructions below.
+
+### Build locally
+
+Build on the target OS and CPU architecture using Python 3.12 with Tkinter:
+
+```bash
+python -m pip install -r requirements-build.txt
+python -m PyInstaller --clean --noconfirm WatchDialPatternGenerator.spec
+python scripts/check_bundle.py
+```
+
+Windows output is in `dist/WatchDialPatternGenerator/`; macOS output is
+`dist/WatchDialPatternGenerator.app`. Builds use a folder bundle because VTK includes
+large native libraries. macOS archives use `ditto` to preserve the app's links and
+permissions. The workflow records installed dependency versions in each download.
+
+CI runs geometry and subprocess regression tests, then checks the actual packaged
+app's Tk/Pillow initialization, VTK mesh construction, and 8/16-bit PNG plus JSON
+exports from a temporary working directory. Interactive 3D rendering and native
+save dialogs still need a manual check on each platform before distributing a release.
+
 ## Install and run (macOS)
 
 Use Python 3.12 or 3.13 with Tkinter enabled and available VTK wheels. From the project folder:
