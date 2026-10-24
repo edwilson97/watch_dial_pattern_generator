@@ -123,18 +123,34 @@ class InspectionUpdates:
         self.executor.shutdown(wait=False, cancel_futures=True)
 
 
+def helper_command(*args):
+    """Re-enter the bundled app, or run this module with the source interpreter."""
+    if getattr(sys, 'frozen', False):
+        return [sys.executable, '--inspection-helper', *map(str, args)]
+    return [sys.executable, str(Path(__file__).resolve()), *map(str, args)]
+
+
 def screenshot_path(initial_name):
     """Run Tk's native save dialog outside VTK's Cocoa application on macOS."""
-    script = (
-        'import sys, tkinter as tk; from tkinter import filedialog; '
-        'root=tk.Tk(); root.withdraw(); '
-        'name=filedialog.asksaveasfilename(parent=root, '
-        'title="Save inspection screenshot", defaultextension=".png", '
-        'initialfile=sys.argv[1], filetypes=[("PNG image", "*.png")]); '
-        'root.destroy(); print(name)'
-    )
-    return subprocess.run([sys.executable, '-c', script, initial_name],
-                          check=True, capture_output=True, text=True).stdout.strip()
+    # A file also works in windowed bundles, where stdout is unavailable.
+    with tempfile.TemporaryDirectory(prefix='dial-screenshot-') as directory:
+        result = Path(directory)/'selection.txt'
+        subprocess.run(helper_command('--screenshot-dialog', initial_name, result), check=True)
+        return result.read_text(encoding='utf-8')
+
+
+def screenshot_dialog(initial_name, result):
+    import tkinter as tk
+    from tkinter import filedialog
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        name = filedialog.asksaveasfilename(
+            parent=root, title='Save inspection screenshot', defaultextension='.png',
+            initialfile=initial_name, filetypes=[('PNG image', '*.png')])
+        Path(result).write_text(name, encoding='utf-8')
+    finally:
+        root.destroy()
 
 
 def crop_map(array, meta, span_mm, center_x=0., center_y=0.):
@@ -377,7 +393,7 @@ def open_inspection(parent, array, meta):
     errors = Path(directory.name)/'error.txt'
     write_snapshot(source, array, meta)
     try:
-        process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), str(source)])
+        process = subprocess.Popen(helper_command(source))
     except Exception:
         directory.cleanup()
         raise
@@ -411,8 +427,12 @@ def open_inspection(parent, array, meta):
     return InspectionSession(process, source)
 
 
-def main():
-    source = Path(sys.argv[1])
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[0] == '--screenshot-dialog':
+        screenshot_dialog(argv[1], argv[2])
+        return
+    source = Path(argv[0])
     try:
         reader = SnapshotReader(source)
         viewer = ReliefViewer(*reader.read())
