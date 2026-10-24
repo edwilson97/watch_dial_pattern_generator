@@ -24,6 +24,53 @@ After creating the environment, you can also launch directly with
 no Qt installation is needed. Inspection opens in its own process so the generator remains
 responsive. Closing the generator also closes its inspection windows.
 
+## Install and run (Windows)
+
+Install **64-bit Python 3.12 or 3.13** from [python.org](https://www.python.org/downloads/windows/),
+including Tcl/Tk support and the Python launcher (`py`). For installer details, see
+[Python's Windows setup guide](https://docs.python.org/3.13/using/windows.html).
+Download and extract this project, or clone the repository, then open PowerShell
+in the project folder (the folder containing `dial_patterns.py` and `requirements.txt`).
+
+Run these commands to create an isolated environment, install dependencies, and
+start the desktop GUI:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe dial_patterns.py
+```
+
+If you installed Python 3.12, use `py -3.12` in the first command. If `py` is not
+recognized, reopen your terminal after installing Python, or use the full path
+to your Python 3.12/3.13 executable to create the environment.
+
+On subsequent runs, open PowerShell in the project folder and run:
+
+```powershell
+.\.venv\Scripts\python.exe dial_patterns.py
+```
+
+These commands also work in Command Prompt. They invoke the environment's Python
+directly, so no activation or PowerShell execution-policy change is required. If
+you prefer activation, use `.\.venv\Scripts\Activate.ps1` in PowerShell or
+`.venv\Scripts\activate.bat` in Command Prompt, then run `python dial_patterns.py`.
+See [Python's virtual environment documentation](https://docs.python.org/3.13/library/venv.html)
+for details.
+
+To check Tkinter, run `.\.venv\Scripts\python.exe -m tkinter`; a small test window
+should open. If it fails, modify or reinstall Python with Tcl/Tk support enabled
+and recreate the environment. PyVista installs VTK for the **Inspect enlarged / 3D**
+window through `requirements.txt`; no Qt installation is needed.
+
+For CLI use, replace `python3` in the examples below with
+`.\.venv\Scripts\python.exe`. For example:
+
+```powershell
+.\.venv\Scripts\python.exe dial_patterns.py --cli --pattern rosette --pitch-mm 0.75 --output rosette.png
+```
+
 ## CLI
 
 ```bash
