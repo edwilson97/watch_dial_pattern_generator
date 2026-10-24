@@ -80,16 +80,15 @@ python3 dial_patterns.py --cli --pattern honeycomb --pitch-mm 0.8 --output honey
 python3 dial_patterns.py --help
 ```
 
-New patterns: `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`. Existing nine remain unchanged.
+Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, and `brick`.
 
-New controls include `--amplitude`, `--secondary-pitch-mm`, `--angle-deg`, and `--segments`. The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
+The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
+
+The GUI remembers edited pitch values per pattern until **Reset to defaults**.
 
 The grayscale preview refreshes when you edit a parameter and move focus to another
 field. Pattern, style, and checkbox changes refresh immediately. Invalid entries
 keep the last valid preview visible and show an error in the status text.
-
-Clous de Paris / Hobnail defaults to a 1 mm pitch; other patterns default to 0.75 mm.
-The GUI remembers edited pitch values per pattern until **Reset to defaults**.
 
 ## Interpretation and limitations
 
