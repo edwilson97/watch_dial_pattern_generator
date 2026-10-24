@@ -2,6 +2,10 @@
 
 A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 24 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
+## License
+
+Copyright (c) 2026 Bridge Watches LLC. Licensed under the [MIT License](LICENSE).
+
 ## Install and run (macOS)
 
 Use Python 3.12 or 3.13 with Tkinter enabled and available VTK wheels. From the project folder:
