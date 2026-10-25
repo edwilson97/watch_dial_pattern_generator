@@ -41,8 +41,45 @@ jobs:
           tests.test_geometry tests.test_distinct_lattices
           tests.test_fishscales_relief tests.test_brick
           tests.test_relief_inspection tests.test_packaging -v
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          : "${MACOS_CERTIFICATE_P12_BASE64:?Set the MACOS_CERTIFICATE_P12_BASE64 secret}"
+          : "${MACOS_CERTIFICATE_PASSWORD:?Set the MACOS_CERTIFICATE_PASSWORD secret}"
+          : "${MACOS_SIGNING_IDENTITY:?Set the MACOS_SIGNING_IDENTITY secret}"
+          case "$MACOS_SIGNING_IDENTITY" in
+            "Developer ID Application: "*) ;;
+            *) echo "MACOS_SIGNING_IDENTITY must be the full Developer ID Application identity." >&2; exit 1 ;;
+          esac
+          umask 077
+          certificate="$RUNNER_TEMP/macos-signing.p12"
+          keychain="$RUNNER_TEMP/macos-signing.keychain-db"
+          keychain_password=$(openssl rand -hex 32)
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$MACOS_CERTIFICATE_PASSWORD" -k "$keychain" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain"
+          rm -f "$certificate"
       - name: Build desktop app
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.MACOS_SIGNING_IDENTITY || '' }}
         run: python -m PyInstaller --clean --noconfirm WatchDialPatternGenerator.spec
+      - name: Verify Developer ID signature
+        if: runner.os == 'macOS'
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          codesign --verify --deep --strict --verbose=2 dist/WatchDialPatternGenerator.app
+          codesign --display --verbose=4 dist/WatchDialPatternGenerator.app 2> "$RUNNER_TEMP/macos-signature.txt"
+          grep -Fqx "Authority=$MACOS_SIGNING_IDENTITY" "$RUNNER_TEMP/macos-signature.txt"
       - name: Smoke test packaged app
         run: python scripts/check_bundle.py
       - name: Record bundled dependencies
@@ -73,3 +110,10 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 30
+      - name: Clean up macOS signing credentials
+        if: ${{ always() && runner.os == 'macOS' }}
+        run: |
+          if [[ -f "$RUNNER_TEMP/macos-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/macos-signing.keychain-db"
+          fi
+          rm -f "$RUNNER_TEMP/macos-signing.p12"

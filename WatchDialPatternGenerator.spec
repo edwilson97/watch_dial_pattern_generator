@@ -1,4 +1,5 @@
 # Build with: python -m PyInstaller --clean --noconfirm WatchDialPatternGenerator.spec
+import os
 import sys
 from PyInstaller.utils.hooks import collect_all
 
@@ -22,12 +23,16 @@ a = Analysis(
     excludes=['PyQt5', 'PyQt6', 'PySide2', 'PySide6'],
     noarchive=False,
 )
+# Leave local builds ad-hoc signed unless a Developer ID identity is supplied.
+signing_identity = os.environ.get('MACOS_SIGNING_IDENTITY') if sys.platform == 'darwin' else None
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
     name='WatchDialPatternGenerator',
     console=False,
+    codesign_identity=signing_identity,
     upx=False,
 )
 collection = COLLECT(
