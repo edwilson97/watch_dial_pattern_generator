@@ -13,6 +13,10 @@ jobs:
   build:
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
+    environment: native-signing
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -33,6 +37,19 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-build.txt
+      - name: Check Windows signing configuration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          foreach ($name in 'AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID') {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Set the $name secret in the native-signing GitHub environment. See README.md."
+            }
+          }
       - name: Install dependencies
         run: python -m pip install -r requirements-build.txt
       - name: Test geometry, exports, and bundle helpers
@@ -72,6 +89,48 @@ jobs:
         env:
           MACOS_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.MACOS_SIGNING_IDENTITY || '' }}
         run: python -m PyInstaller --clean --noconfirm WatchDialPatternGenerator.spec
+      - name: Sign in to Azure with GitHub OIDC
+        if: runner.os == 'Windows'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign Windows executable
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: https://cus.codesigning.azure.net/
+          signing-account-name: DialPatternGeneratorApp
+          certificate-profile-name: DialPatternGeneratorApp
+          files: ${{ github.workspace }}\dist\WatchDialPatternGenerator\WatchDialPatternGenerator.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Watch Dial Pattern Generator
+          description-url: https://github.com/edwilson97/watch_dial_pattern_generator
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+      - name: Verify Windows signature and timestamp
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $signature = Get-AuthenticodeSignature -LiteralPath 'dist/WatchDialPatternGenerator/WatchDialPatternGenerator.exe'
+          if ($signature.Status -ne 'Valid') {
+            throw "Windows signature verification failed: $($signature.Status) - $($signature.StatusMessage)"
+          }
+          if ($null -eq $signature.TimeStamperCertificate) {
+            throw 'The Windows executable must have a timestamped signature.'
+          }
+          Write-Host "Verified publisher: $($signature.SignerCertificate.Subject)"
       - name: Verify Developer ID signature
         if: runner.os == 'macOS'
         env:
