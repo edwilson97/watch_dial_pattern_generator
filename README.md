@@ -33,11 +33,33 @@ with no additional ZIP wrapper:
 | `WatchDialPatternGenerator-macos-x64.zip` | Intel Mac, macOS 15 or newer | Extract and open `WatchDialPatternGenerator.app`. |
 
 Artifacts are kept for 30 days. For permanent public downloads, a maintainer can
-attach the ZIP files to a GitHub Release. These builds are unsigned and macOS builds
-are not notarized, so Windows SmartScreen or macOS Gatekeeper may require approval.
-On macOS, use **System Settings → Privacy & Security → Open Anyway** if you trust
-the downloaded build. Signing and notarization require separate certificates and
-credentials, which this workflow does not configure.
+attach the ZIP files to a GitHub Release. Windows builds are unsigned. GitHub's
+macOS builds are signed with the configured Developer ID Application certificate,
+but are not yet notarized, so macOS Gatekeeper may still require approval. On macOS,
+use **System Settings → Privacy & Security → Open Anyway** if you trust the build.
+Notarization requires additional Apple credentials and is not configured yet.
+
+### macOS signing setup
+
+Both macOS jobs require these repository secrets under **Settings → Secrets and
+variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `MACOS_CERTIFICATE_P12_BASE64` | Base64-encoded `.p12` containing the Developer ID Application certificate and its private key. |
+| `MACOS_CERTIFICATE_PASSWORD` | The `.p12` export password. |
+| `MACOS_SIGNING_IDENTITY` | Full certificate identity, such as `Developer ID Application: Bridge Watches LLC (TEAMID)`. |
+
+The workflow imports the identity into a temporary keychain and passes it to
+PyInstaller, which signs the executable, bundled libraries, and app with hardened
+runtime and timestamps. CI verifies the expected Developer ID signature and runs
+the packaged-app smoke checks. Missing signing secrets fail macOS builds rather
+than publishing ad-hoc signed downloads. The keychain and certificate file are
+removed at the end of the job.
+
+Local builds can use a signing identity already installed in Keychain Access by
+setting `MACOS_SIGNING_IDENTITY` before running PyInstaller. Without that variable,
+local macOS builds retain PyInstaller's default ad-hoc signing.
 
 The apps launch without a terminal window. On macOS, CLI arguments can also be
 passed directly to `WatchDialPatternGenerator.app/Contents/MacOS/WatchDialPatternGenerator`.
