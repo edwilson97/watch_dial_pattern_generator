@@ -13,7 +13,7 @@ from pathlib import Path
 here = Path(__file__).resolve().parent.parent
 commands = [
     [sys.executable, '-m', 'tests.test_patterns'],
-    [sys.executable, '-m', 'unittest', 'tests.test_geometry', 'tests.test_distinct_lattices', 'tests.test_fishscales_relief', 'tests.test_brick', 'tests.test_relief_inspection', 'tests.test_packaging', '-v'],
+    [sys.executable, '-m', 'unittest', 'tests.test_geometry', 'tests.test_distinct_lattices', 'tests.test_fishscales_relief', 'tests.test_brick', 'tests.test_dimples', 'tests.test_relief_inspection', 'tests.test_packaging', '-v'],
 ]
 for command in commands:
     subprocess.run(command, cwd=here, check=True)

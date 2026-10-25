@@ -22,7 +22,7 @@ def main():
             with Image.open(path.with_name(key+'_8bit.png')) as image:
                 assert image.mode=='L'
     from PIL import ImageDraw
-    sheet=Image.new('RGB',(4*256,6*290),'white'); draw=ImageDraw.Draw(sheet)
+    sheet=Image.new('RGB',(4*256,((len(thumbs)+3)//4)*290),'white'); draw=ImageDraw.Draw(sheet)
     for i,(key,im) in enumerate(thumbs):
         x=i%4*256;y=i//4*290
         sheet.paste(im.resize((246,246)),(x+5,y+5))

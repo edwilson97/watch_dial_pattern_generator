@@ -1,8 +1,8 @@
 # Watch Dial Pattern Generator
 
-Current version: **1.0.0**, the first official published release.
+Current version: **1.1.0**. See [release notes](RELEASE-NOTES.md) for changes.
 
-A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 24 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
+A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 25 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
 ## Donate/Sponsor
 
@@ -33,11 +33,96 @@ with no additional ZIP wrapper:
 | `WatchDialPatternGenerator-macos-x64.zip` | Intel Mac, macOS 15 or newer | Extract and open `WatchDialPatternGenerator.app`. |
 
 Artifacts are kept for 30 days. For permanent public downloads, a maintainer can
-attach the ZIP files to a GitHub Release. Windows builds are unsigned. GitHub's
+attach the ZIP files to a GitHub Release. Once the Windows signing setup below is
+complete, the workflow signs the Windows executable with Azure Artifact Signing.
+Previously published unsigned downloads are unchanged. GitHub's
 macOS builds are signed with the configured Developer ID Application certificate,
 but are not yet notarized, so macOS Gatekeeper may still require approval. On macOS,
 use **System Settings → Privacy & Security → Open Anyway** if you trust the build.
 Notarization requires additional Apple credentials and is not configured yet.
+
+### Windows signing setup (Azure Artifact Signing)
+
+The workflow uses these Artifact Signing resources:
+
+| Setting | Value |
+| --- | --- |
+| Account | `DialPatternGeneratorApp` |
+| Certificate profile | `DialPatternGeneratorApp` |
+| Azure region | Central US |
+| Endpoint | `https://cus.codesigning.azure.net/` |
+
+The certificate profile must be **Public Trust** for public Windows downloads;
+Public Trust Test and Private Trust profiles are not publicly trusted. Azure keeps
+the signing key; no certificate export or client secret is needed for this setup.
+
+1. In the Azure portal, open **Microsoft Entra ID → App registrations → New
+   registration**. Name the application `GitHub-DialPatternGeneratorApp`, select
+   accounts in this organizational directory only (single tenant), leave the
+   redirect URI empty, and register it. Record the **Application (client) ID** and
+   **Directory (tenant) ID** from its Overview page. Also record the **Subscription
+   ID** from the subscription containing the signing account.
+2. In this GitHub repository, open **Settings → Environments → New environment**
+   and create `native-signing`. Under its deployment branches and tags, select
+   **Selected branches and tags** and allow the `main` branch and `v*` tags (also
+   allow `master` if that branch is used). The native-build matrix uses this
+   environment; only its Windows job signs in to Azure.
+3. Back in the Entra app registration, open **Certificates & secrets → Federated
+   credentials → Add credential**. Choose **GitHub Actions deploying Azure
+   resources** and enter:
+
+   | Field | Value |
+   | --- | --- |
+   | Organization/owner | `edwilson97` |
+   | Organization ID (GitHub owner ID) | `6722229` |
+   | Repository | `watch_dial_pattern_generator` |
+   | Repository ID | `1427720192` |
+   | Entity type | Environment |
+   | Environment | `native-signing` |
+   | Credential name | `github-native-signing` |
+   | Issuer | `https://token.actions.githubusercontent.com` |
+   | Audience | `api://AzureADTokenExchange` |
+   | Subject | `repo:edwilson97@6722229/watch_dial_pattern_generator@1427720192:environment:native-signing` |
+
+   The GitHub wizard fills the issuer, audience, and subject. Verify that they
+   match the values above, then add the credential. This environment-based subject
+   works for release tags without creating an Azure credential for each tag.
+   This repository uses GitHub's immutable subject format, so both numeric IDs
+   are required. Although the portal labels the owner field "Organization", this
+   repository is owned by the personal account `edwilson97`; use that account's
+   name and numeric ID.
+4. Open **Artifact Signing Accounts → DialPatternGeneratorApp → Access control
+   (IAM) → Add role assignment**. Select **Artifact Signing Certificate Profile
+   Signer**, choose **User, group, or service principal**, and select the
+   `GitHub-DialPatternGeneratorApp` application. Review and assign the role on this
+   signing account. Subscription-wide Contributor access is not needed.
+5. In GitHub, open **Settings → Environments → native-signing → Environment
+   secrets** and add:
+
+   | Secret | Value |
+   | --- | --- |
+   | `AZURE_CLIENT_ID` | Application (client) ID from step 1. |
+   | `AZURE_TENANT_ID` | Directory (tenant) ID from step 1. |
+   | `AZURE_SUBSCRIPTION_ID` | Subscription ID containing the signing account. |
+
+Once this workflow is on `main`, run **Actions → Build native apps → Run workflow**
+against `main`. The Windows job checks configuration, builds with PyInstaller,
+authenticates using GitHub OIDC, signs `WatchDialPatternGenerator.exe`, verifies
+the Authenticode signature and timestamp, and then runs the packaged-app smoke
+checks and creates the ZIP. Missing credentials, failed signing, or an invalid or
+untimestamped signature fail the job before a download is uploaded. Bundled
+third-party libraries retain their existing signatures.
+
+The Azure identity needs the signer role even if your own Azure user can sign.
+Allow time for a new role assignment to propagate before retrying a failed build.
+Existing tags, including `v1.1.0`, still point to their original workflow; running
+an old tag will not use this signing configuration. Use a new tag after the change
+is merged, or manually build the updated `main` branch.
+
+References: [Microsoft's OIDC setup](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect),
+[Artifact Signing authentication and signer role](https://github.com/Azure/artifact-signing-action/blob/main/docs/OIDC.md),
+[signing action](https://github.com/Azure/artifact-signing-action), and
+[regional endpoints and timestamping](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-signing-integrations).
 
 ### macOS signing setup
 
@@ -161,9 +246,9 @@ python3 dial_patterns.py --help
 
 To see all available options for the CLI, use the `-h` or `--help` command line parameter.
 
-Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, and `brick`.
+Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, and `dimples`.
 
-[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 24 patterns.
+[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 25 patterns.
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
@@ -172,6 +257,22 @@ The GUI remembers edited pitch values per pattern until **Reset to defaults**.
 The grayscale preview refreshes when you edit a parameter and move focus to another
 field. Pattern, style, and checkbox changes refresh immediately. Invalid entries
 keep the last valid preview visible and show an error in the status text.
+
+## Dimples (golf ball texture)
+
+Select **Dimples (golf ball texture)** for staggered rows of round recessed bowls
+with flat land between them. **Pattern pitch** sets center-to-center spacing;
+**Dimple diameter** sets the opening diameter and must be positive and no larger
+than the pitch. Set diameter equal to pitch for touching dimple edges; larger
+pitch leaves flat space between them. Defaults are 0.75 mm pitch and 0.65 mm diameter. **Target depth**
+sets the design relief depth. Rotation, pattern offset, inversion, circular masking,
+and live 3D inspection are supported. White is the flat surface; black is the
+bottom of a dimple.
+
+```bash
+python3 dial_patterns.py --cli --pattern dimples --pitch-mm 0.75 \
+  --dimple-diameter-mm 0.65 --depth-mm 0.15 --output dimples.png
+```
 
 ## Interpretation and limitations
 
@@ -187,11 +288,11 @@ keep the last valid preview visible and show an error in the status text.
 python3 -m tests.test_patterns
 ```
 
-This tests all 24 generators and PNG exports and creates `images/pattern_catalog.png`.
+This tests all 25 generators and PNG exports and creates `images/pattern_catalog.png`.
 
 ## Full test suite (including real Tkinter GUI interaction)
 
-The test runner exercises all 24 mathematical pattern renderers and GUI workflows.
+The test runner exercises all 25 mathematical pattern renderers and GUI workflows.
 It opens a real Tk window, selects every pattern, verifies visible parameter controls,
 updates a preview, invokes the GUI export button, and verifies 8/16-bit PNG and JSON output.
 Native save dialogs and message boxes are mocked to make tests deterministic.
@@ -223,99 +324,6 @@ Circular mode fills exterior pixels with the selected grayscale level; it does n
 
 References: [LightBurn 2.1 Galvo cut settings](https://docs.lightburnsoftware.com/2.1/Reference/CutSettingsEditor/GalvoSpecificCutSettings/) and [3D Sliced engraving guide](https://docs.lightburnsoftware.com/2.1/Guides/3DSlicedImage/).
 
-## v1.0.0 — First official release
+## Release history
 
-- Includes all 24 patterns, desktop and command-line interfaces, live 3D inspection, and PNG plus settings exports.
-- Adds plain-language hover tips for every main GUI button, input field, dropdown, and checkbox.
-- Displays version 1.0.0 in the GUI title. Run `python dial_patterns.py --version` to check the version from the command line.
-
-## v0.2 — Relief geometry and enlarged inspection
-
-- Basketweave and Panier ribbons now descend continuously to common recessed cell boundaries, replacing height jumps at crossovers. This deliberately changes their appearance.
-- Fish Scales uses cells bounded by consecutive staggered arcs rather than resetting at horizontal rows. All three styles share recessed arc boundaries. Fan/Scallop uses the same continuous cell layout with internal radial ribs.
-- Honeycomb now has flat hexagonal plateaus, recessed joints and linear bevels. Joint width is 5% of pitch; bevel width on each side is `(0.10 + 0.30 * softness) * pitch`. It replaces the old circular mounds.
-- Perlage now approximates overlapping shallow circular grain strokes with feathered rims. Ring spacing (`--perlage-ring-pitch-mm`, default 0.1 mm) and overlap (`--perlage-overlap`, default 0.5, range 0–0.5) are independent controls. It is a stylized relief approximation of graining, not a simulation of abrasive tooling. Heights remain within 0.78–1, so relief uses at most 22% of the target depth range; output is intentionally not contrast-normalized.
-- **Inspect enlarged / 3D** opens an interactive PyVista window linked to the current full output-resolution map. Drag to orbit/tilt, Shift-drag to pan, and use the wheel to zoom (right-drag also zooms). Crop controls update on release; depth exaggeration updates continuously. Camera position is preserved when changing crop, detail, coloring, or exaggeration. At 1× exaggeration, X/Y and design Z share millimeter units. Crop centers clamp at image edges. Open viewers update automatically about 350 ms after you pause editing a pattern parameter, including pattern selection, inversion, circular masking, size, resolution, and target depth. Full-resolution rendering runs in the background; large maps can take longer. Incomplete or invalid entries retain the last valid surface and show a status message in the generator. Older render results are discarded when newer edits arrive. Rotation, pan, zoom, projection, coloring, mesh detail, and depth exaggeration are preserved; crop controls clamp to the new dial size when needed.
-- Mesh detail offers Fast (201), Balanced (401), and Fine (801) samples per side, capped by the source crop resolution. Samples retain their actual pixel-center positions and depth; no smoothing is applied to the geometry. Use a small crop or press **G** for the full-resolution nearest-neighbor grayscale height map to inspect narrow grooves. Press **G** again to restore the 3D camera.
-- Camera shortcuts: **T** top, **F** front, **I** isometric, **R** fit/reset framing, **P** perspective/orthographic. **C** toggles depth coloring. **S** opens a save dialog for a labeled inspection screenshot. These screenshots never change the 16-bit engraving PNG. Regenerate older exported maps to adopt the corrected geometry.
-
-## v0.1.5 — Brick and Reset
-
-The Brick / Running Bond pattern uses exact millimeter-defined repeating rectangular
-geometry, with alternating staggered courses. Available styles: engraved (flat
-brick interiors with recessed joints), faceted (flat plateaus and linear bevels),
-and rounded (smooth pillow relief). The Brick-specific GUI fields are shown only
-when Brick is selected.
-
-The **Reset to defaults** button restores the startup pattern, every entry and
-selection (including hidden pattern-specific values), the invert/circular checkboxes,
-and the preview. It does not delete exported files.
-
-Example CLI:
-
-```bash
-python3 dial_patterns.py --cli --pattern brick --brick-width-mm 1.2 \
-  --brick-height-mm 0.6 --brick-joint-mm 0.1 --brick-bevel-mm 0.08 \
-  --brick-row-offset 0.5 --brick-style faceted --depth-mm 0.15 \
-  --output brick_faceted.png
-```
-
-Use `python3 -m tests.run_tests` to run the expanded regression and GUI test suite.
-Grayscale denotes relative height, not a calibrated laser-removal depth.
-
-## v0.1.4 — Fish Scales relief update
-
-- Replaced the old arc-ridge Fish Scales generator with true relief geometry.
-- Added three selectable Fish Scales styles: engraved, faceted, and rounded.
-- Added GUI/CLI support and regression tests for the new Fish Scales relief styles.
-
-## v0.1.3 — Asanoha multiple relief styles
-
-- Added three selectable Asanoha styles: engraved, faceted, and rounded.
-- Added GUI and CLI support for choosing the Asanoha style.
-- Added regression tests verifying the styles remain distinct and that relief styles produce meaningful mid-tone depth variation.
-
-## v0.1.2 — Asanoha relief update
-
-- Changed Asanoha from a line-engraving-like pattern to a true faceted relief height map with sculpted surfaces between the grooves.
-- Retained controllable line width while adding meaningful Z variation across the non-groove cells.
-- Added regression tests to confirm the relief contains substantial mid-tone height variation beyond the groove network.
-
-## v0.1.1 — corrected geometric families
-
-- **Asanoha:** constructed from repeated hexagonal hemp-leaf line segments, including six radial arms, diagonal leaf ribs and perimeter connections. The `--line-width-mm` argument controls actual recessed stroke width.
-- **Isometric Cubes:** three rhombus faces tessellate a hexagonal cell. They occupy three distinct height terraces (no directional lighting). `--cube-gap-mm` controls recessed boundaries; `--cube-step-fraction` controls physical relative-height differences.
-- Both share a regular triangular tiling only; they no longer share the same synthetic wave-form algorithm.
-- New tests: `tests/test_distinct_lattices.py` plus additional GUI field visibility checks.
-
-Examples:
-
-```sh
-python3 dial_patterns.py --cli --pattern asanoha --pitch-mm .8 --line-width-mm .055 --output asanoha.png
-python3 dial_patterns.py --cli --pattern isometriccubes --pitch-mm .8 --cube-gap-mm .04 --cube-step-fraction .28 --output cubes.png
-```
-
-Note: The stepped cube surfaces are actual height terraces; the resulting physical relief will not appear identical to a conventionally shaded 3D cube graphic under all viewing conditions.
-
-## v0.1: refined pattern geometry
-
-The v0.1 release retains all 24 patterns and adds pattern-specific parameters:
-
-- **Hobnail:** `--top-width-mm` makes a mathematically flat truncated-pyramid apex (0 = pointed).
-- **Wave:** `--wave-meander-mm` controls lateral waviness independently from `--ridge-height-fraction` (0 = flat, 1 = full grayscale range).
-- **Annular Wave:** `--ridge-height-fraction` adjusts concentric ridge height.
-- **Grain d'Orge:** `--grain-aspect` adjusts grain elongation; `--amplitude` controls centerline curvature.
-- **Flamme:** `--flame-taper` progressively narrows flame ridges outward.
-- **Panier:** `--ribbon-curvature` independently controls woven ribbon bowing.
-- **Rosette:** `--rosette-harmonics` mixes the primary petal frequency with its second harmonic.
-
-All seven controls appear only when their pattern is selected in the GUI, are available from CLI, and are stored in the JSON metadata. These are mathematical stylizations, not guaranteed reproductions of historical engine-turning cutter trajectories. `depth_mm` remains target-depth metadata rather than a laser or CNC calibration.
-
-Example:
-
-```bash
-python3 dial_patterns.py --cli --pattern hobnail --pitch-mm 0.75 --top-width-mm 0.18 --output truncated_hobnail.png
-python3 dial_patterns.py --cli --pattern wave --pitch-mm 0.75 --wave-meander-mm 0.22 --ridge-height-fraction 0.6 --output wave.png
-```
-
-Run the expanded suite (including GUI interaction tests): `python3 -m tests.run_tests` (on headless Linux: `xvfb-run -a python3 -m tests.run_tests`).
+See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full release history.

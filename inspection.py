@@ -383,7 +383,7 @@ class ReliefViewer:
         self.plotter.show()
 
 
-def open_inspection(parent, array, meta):
+def open_inspection(parent, array, meta, on_ready=None):
     """Launch an isolated native viewer without blocking Tk's event loop."""
     if importlib.util.find_spec('pyvista') is None:
         raise RuntimeError('PyVista is required for 3D inspection. Install requirements.txt '
@@ -391,6 +391,7 @@ def open_inspection(parent, array, meta):
     directory = tempfile.TemporaryDirectory(prefix='dial-inspection-')
     source = Path(directory.name)/'source.npz'
     errors = Path(directory.name)/'error.txt'
+    ready = Path(directory.name)/'ready'
     write_snapshot(source, array, meta)
     try:
         process = subprocess.Popen(helper_command(source))
@@ -399,7 +400,12 @@ def open_inspection(parent, array, meta):
         raise
 
     def poll():
-        if process.poll() is None:
+        nonlocal on_ready
+        running = process.poll() is None
+        if on_ready is not None and (ready.exists() or not running):
+            callback, on_ready = on_ready, None
+            callback()
+        if running:
             parent.after(250, poll)
             return
         try:
@@ -437,6 +443,11 @@ def main(argv=None):
         reader = SnapshotReader(source)
         viewer = ReliefViewer(*reader.read())
         viewer.watch_source(reader)
+        def signal_ready(plotter):
+            ready = source.with_name('ready')
+            if not ready.exists():
+                ready.touch()
+        viewer.plotter.add_on_render_callback(signal_ready)
         viewer.show()
     except Exception as exc:
         source.with_name('error.txt').write_text(str(exc))

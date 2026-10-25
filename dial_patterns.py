@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageTk
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 PATTERNS = {
     'hobnail': 'Clous de Paris / Hobnail',
@@ -39,6 +39,7 @@ PATTERNS = {
     'fanscallop': 'Fan / Scallop',
     'asanoha': 'Asanoha (hemp leaf geometry)',
     'brick': 'Brick / Running Bond',
+    'dimples': 'Dimples (golf ball texture)',
 
 }
 
@@ -80,6 +81,18 @@ def _segment_distance(px, py, ax, ay, bx, by):
     dx, dy = bx - ax, by - ay
     t = np.clip(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0, 1)
     return np.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _dimple_height(u, v, pitch_mm, diameter_mm):
+    """Round recessed bowls on staggered rows; flat land between dimples.
+
+    A shallow spherical-cap profile is normalized from 0 at the bowl center
+    to 1 at its rim. The target depth sets the vertical relief span separately.
+    """
+    xx, yy = _hex_cell_coordinates(u, v)
+    radius = diameter_mm / (2 * pitch_mm)
+    radial = np.clip(np.hypot(xx, yy) / radius, 0, 1)
+    return (1 - np.sqrt(1 - .64 * radial**2)) / .4
 
 
 def _hex_vertices():
@@ -288,7 +301,7 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
            secondary_pitch_mm=1.2, angle_deg=60.0, segments=12,
            line_width_mm=0.055, cube_gap_mm=0.04, cube_step_fraction=0.28, asanoha_style='faceted', fishscales_style='rounded', brick_width_mm=1.20, brick_height_mm=0.60,
            brick_joint_mm=0.10, brick_bevel_mm=0.08, brick_row_offset=0.50, brick_style='faceted',
-           perlage_ring_pitch_mm=0.1, perlage_overlap=0.5):
+           perlage_ring_pitch_mm=0.1, perlage_overlap=0.5, dimple_diameter_mm=0.65):
     """Return uint16 height map and metadata. White = high, black = low.
 
     depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
@@ -318,9 +331,9 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
         raise ValueError('wave meander must be nonnegative; ridge height fraction must be 0–1')
     if grain_aspect < 1 or not 0 <= flame_taper <= 1 or not 0 <= ribbon_curvature <= 2 or not 0 <= rosette_harmonics <= 1:
         raise ValueError('grain aspect >= 1; flame taper and rosette harmonics 0–1; ribbon curvature 0–2')
-    if line_width_mm <= 0 or line_width_mm >= pitch_mm / 2:
+    if pattern == 'asanoha' and (line_width_mm <= 0 or line_width_mm >= pitch_mm / 2):
         raise ValueError("Asanoha line width must be > 0 and < pitch / 2")
-    if cube_gap_mm <= 0 or cube_gap_mm >= pitch_mm / 2:
+    if pattern == 'isometriccubes' and (cube_gap_mm <= 0 or cube_gap_mm >= pitch_mm / 2):
         raise ValueError("Cube gap must be > 0 and < pitch / 2")
     if not 0 < cube_step_fraction < .5:
         raise ValueError("Cube step fraction must be > 0 and < 0.5")
@@ -339,6 +352,9 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
             raise ValueError('Brick bevel must fit within the raised brick dimensions')
         if brick_style not in ENUM_FIELDS['brick_style']:
             raise ValueError('Invalid brick style')
+    if pattern == 'dimples':
+        if not math.isfinite(pitch_mm) or not 0 < dimple_diameter_mm <= pitch_mm:
+            raise ValueError('Dimple diameter must be positive and no larger than the pattern pitch')
     if perlage_ring_pitch_mm <= 0 or not 0 <= perlage_overlap <= .5:
         raise ValueError('Perlage ring pitch must be positive; overlap must be 0–0.5')
     # Pixel-center coordinates; no illumination, only geometry.
@@ -354,7 +370,9 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
     rr = np.sqrt(x*x + y*y)
     theta = np.arctan2(y, x)
 
-    if pattern == 'brick':
+    if pattern == 'dimples':
+        h = _dimple_height(u + phase, v + phase, pitch_mm, dimple_diameter_mm)
+    elif pattern == 'brick':
         h = _brick_height(u * pitch_mm + phase * brick_width_mm,
                           v * pitch_mm, brick_width_mm, brick_height_mm,
                           brick_joint_mm, brick_bevel_mm, brick_row_offset, brick_style)
@@ -520,7 +538,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
                 brick_height_mm=brick_height_mm, brick_joint_mm=brick_joint_mm,
                 brick_bevel_mm=brick_bevel_mm, brick_row_offset=brick_row_offset,
                 brick_style=brick_style, perlage_ring_pitch_mm=perlage_ring_pitch_mm,
-                perlage_overlap=perlage_overlap, grayscale='white=highest; black=deepest',
+                perlage_overlap=perlage_overlap, dimple_diameter_mm=dimple_diameter_mm,
+                grayscale='white=highest; black=deepest',
                 pixel_pitch_mm=size_mm/pixels,
                 note='Depth is design metadata; calibrate laser material removal experimentally.')
     return out, meta
@@ -562,6 +581,7 @@ PATTERN_FIELDS = {
     'fanscallop': ('pitch_mm', 'rotation', 'phase', 'amplitude'),
     'asanoha': ('pitch_mm', 'rotation', 'phase', 'line_width_mm', 'asanoha_style'),
     'brick': ('brick_width_mm', 'brick_height_mm', 'brick_joint_mm', 'brick_bevel_mm', 'brick_row_offset', 'brick_style', 'rotation', 'phase'),
+    'dimples': ('pitch_mm', 'dimple_diameter_mm', 'rotation', 'phase'),
 
 }
 FIELD_SPECS = {
@@ -600,6 +620,7 @@ FIELD_SPECS = {
     'brick_bevel_mm': ('Brick bevel width (mm)', '0.08'),
     'brick_row_offset': ('Brick row offset (0–1)', '0.50'),
     'brick_style': ('Brick relief style', 'faceted'),
+    'dimple_diameter_mm': ('Dimple diameter (mm)', '0.65'),
 }
 
 
@@ -637,6 +658,7 @@ FIELD_TOOLTIPS = {
     'brick_bevel_mm': 'Enter the sloped edge width of each brick in millimeters. Use 0 for sharp edges; slopes must fit within half the raised brick width and height.',
     'brick_row_offset': 'Enter 0 to 1 to shift alternate brick rows. Use 0 for aligned joints or 0.5 for a half-brick shift.',
     'brick_style': 'Choose bricks with sloped edges (faceted), soft tops (rounded), or joints cut into a flat surface (engraved).',
+    'dimple_diameter_mm': 'Enter the diameter of each round recess in millimeters, greater than 0 and no larger than the pattern pitch. Set diameter equal to pitch for touching edges. Pitch sets center-to-center spacing; target depth sets the bowl depth.',
     'perlage_ring_pitch_mm': 'Enter the spacing between fine rings within each circular mark in millimeters, greater than 0.',
     'perlage_overlap': 'Enter 0 to 0.5 for how much neighboring circular marks overlap. Use 0 for touching marks or 0.5 for the most overlap.',
 }
@@ -671,7 +693,8 @@ def run_gui():
     # Scroll the parameter column: small macOS screens can still access every control.
     scroll_holder = ttk.Frame(left)
     scroll_holder.pack(fill='x')
-    field_canvas = tk.Canvas(scroll_holder, width=290, height=300, highlightthickness=0)
+    field_canvas = tk.Canvas(scroll_holder, width=290, height=300, highlightthickness=0,
+                             yscrollincrement=16)
     field_scroll = ttk.Scrollbar(scroll_holder, orient='vertical', command=field_canvas.yview)
     field_canvas.configure(yscrollcommand=field_scroll.set)
     field_canvas.pack(side='left', fill='y')
@@ -694,6 +717,40 @@ def run_gui():
         add_tooltip(widget, FIELD_TOOLTIPS[key])
         field_rows[key] = row
         field_inputs[key] = widget
+
+    scroll_remainder = 0.0
+    windowing_system = root.tk.call('tk', 'windowingsystem')
+
+    def scroll_parameters(event):
+        nonlocal scroll_remainder
+        if getattr(event, 'num', None) in (4, 5):
+            movement = -3 if event.num == 4 else 3
+        else:
+            # Aqua reports small trackpad deltas; Windows uses 120 per notch.
+            movement = -event.delta if windowing_system == 'aqua' else -event.delta / 120 * 3
+        scroll_remainder += movement
+        steps = math.trunc(scroll_remainder)
+        scroll_remainder -= steps
+        if steps:
+            field_canvas.yview_scroll(steps, 'units')
+        if hasattr(event.widget, 'tooltip'):
+            event.widget.tooltip.hide()
+        return 'break'
+
+    # Run before entry/combobox class bindings so wheel gestures scroll the
+    # panel without changing parameter values. Other GUI areas keep their bindings.
+    scroll_tag = 'ParameterScroll:' + str(field_canvas)
+    root.bind_class(scroll_tag, '<MouseWheel>', scroll_parameters)
+    if windowing_system == 'x11':
+        root.bind_class(scroll_tag, '<Button-4>', scroll_parameters)
+        root.bind_class(scroll_tag, '<Button-5>', scroll_parameters)
+
+    def bind_parameter_scroll(widget):
+        widget.bindtags((scroll_tag, *widget.bindtags()))
+        for child in widget.winfo_children():
+            bind_parameter_scroll(child)
+
+    bind_parameter_scroll(scroll_holder)
     invert = tk.BooleanVar(value=False)
     circular = tk.BooleanVar(value=False)
     add_tooltip(ttk.Checkbutton(left, text='Invert height map', variable=invert),
@@ -812,16 +869,28 @@ def run_gui():
     add_tooltip(ttk.Button(left, text='Update preview', command=update_preview),
                 'Redraw the small preview using your current settings. White areas are high and black areas are deep.').pack(fill='x', pady=(12, 5))
     def inspect_relief():
+        previous_cursor = root.cget('cursor')
+
+        def finish_launch():
+            root.config(cursor=previous_cursor)
+            inspect_button.state(['!disabled'])
+
         try:
+            cursor = 'spinning' if root.tk.call('tk', 'windowingsystem') == 'aqua' else 'watch'
+            root.config(cursor=cursor)
+            inspect_button.state(['disabled'])
+            root.update_idletasks()
             from inspection import open_inspection
             kw = params()
             arr, meta = render(**kw)
-            session = open_inspection(root, arr, meta)
+            session = open_inspection(root, arr, meta, on_ready=finish_launch)
             inspection_updates.sessions.append(session)
         except Exception as e:
+            finish_launch()
             messagebox.showerror('Inspection failed', str(e))
 
-    add_tooltip(ttk.Button(left, text='Inspect enlarged / 3D', command=inspect_relief),
+    inspect_button = ttk.Button(left, text='Inspect enlarged / 3D', command=inspect_relief)
+    add_tooltip(inspect_button,
                 'Open a larger view to zoom in and explore the surface in 3D. It updates as you change settings.').pack(fill='x', pady=(0, 5))
     add_tooltip(ttk.Button(left, text='Reset to defaults', command=reset_all),
                 'Restore the starting pattern and all original settings, including settings for other patterns.').pack(fill='x', pady=(0, 5))
@@ -882,6 +951,8 @@ def main():
     parser.add_argument('--brick-style', choices=ENUM_FIELDS['brick_style'], default='faceted')
     parser.add_argument('--perlage-ring-pitch-mm', type=float, default=.1)
     parser.add_argument('--perlage-overlap', type=float, default=.5)
+    parser.add_argument('--dimple-diameter-mm', type=float, default=.65,
+                        help='Dimple diameter in mm, positive and no larger than pattern pitch')
     parser.add_argument('--output', default='watch_dial_heightmap.png')
     args = parser.parse_args()
     if args.gui or (not args.cli and len(__import__('sys').argv) == 1):

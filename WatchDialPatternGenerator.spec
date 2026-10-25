@@ -16,7 +16,7 @@ a = Analysis(
     ['frozen_entry.py'],
     pathex=[],
     binaries=binaries,
-    datas=datas + [('LICENSE', '.'), ('README.md', '.')],
+    datas=datas + [('LICENSE', '.'), ('README.md', '.'), ('RELEASE-NOTES.md', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
@@ -47,6 +47,6 @@ if sys.platform == 'darwin':
         bundle_identifier='com.bridgewatches.watchdialpatterngenerator',
         info_plist={
             'NSHighResolutionCapable': True,
-            'CFBundleShortVersionString': '1.0.0',
+            'CFBundleShortVersionString': '1.1.0',
         },
     )

@@ -73,7 +73,20 @@ class LatticeGeometryTests(unittest.TestCase):
                          ('cube_step_fraction',0),('cube_step_fraction',.5),
                          ('asanoha_style','nope')]:
             with self.subTest(key=key, val=val), self.assertRaises(ValueError):
-                render(pixels=128, **{key:val})
+                pattern = 'isometriccubes' if key.startswith('cube_') else 'asanoha'
+                render(pattern=pattern, pixels=128, **{key:val})
+
+    def test_line_width_validation_only_applies_to_asanoha(self):
+        from dial_patterns import PATTERNS
+        for pattern in PATTERNS:
+            if pattern != 'asanoha':
+                with self.subTest(pattern=pattern):
+                    render(pattern=pattern, pixels=128, line_width_mm=0)
+
+    def test_cube_gap_validation_only_applies_to_cubes(self):
+        render(pattern='asanoha', pixels=128, pitch_mm=.05, line_width_mm=.01)
+        with self.assertRaises(ValueError):
+            render(pattern='isometriccubes', pixels=128, pitch_mm=.05)
 
 if __name__ == '__main__':
     unittest.main()
