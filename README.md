@@ -21,7 +21,7 @@ packages the app with Python, Tkinter, NumPy, Pillow, PyVista, and VTK included.
 Users do not need to install Python or run `pip`.
 
 To create downloads, push this workflow to GitHub, then open **Actions → Build native
-apps → Run workflow**. It also runs on pull requests, pushes to `main`/`master`, and
+apps → Run workflow**. It also runs on pushes to `main`/`master` and
 tags beginning with `v`. After a successful run, download the matching artifact
 from the run's **Artifacts** section and extract it. Each artifact is the ZIP itself,
 with no additional ZIP wrapper:
