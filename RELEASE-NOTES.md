@@ -1,5 +1,9 @@
 # Release Notes
 
+## Unreleased
+
+- Added Windows executable signing through Azure Artifact Signing with GitHub OIDC, SHA-256, and timestamp verification before packaging. Requires the Entra application and GitHub environment setup described in the README.
+
 ## v1.1.0 — Dimples and GUI improvements
 
 - Show a busy cursor while the 3D Viewer starts, restoring it when the viewer appears or startup fails.
