@@ -21,13 +21,10 @@ jobs:
         include:
           - platform: windows-x64
             runner: windows-2022
-            extension: zip
           - platform: macos-arm64
             runner: macos-15
-            extension: dmg
           - platform: macos-x64
             runner: macos-15-intel
-            extension: dmg
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -58,16 +55,22 @@ jobs:
         run: >-
           Compress-Archive -Path dist/WatchDialPatternGenerator,dist/dependencies.txt
           -DestinationPath dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip
-      - name: Package and verify macOS disk image
+      - name: Archive macOS app
         if: runner.os == 'macOS'
-        run: >-
-          bash scripts/package_macos.sh
-          dist/WatchDialPatternGenerator.app dist/dependencies.txt
-          dist/WatchDialPatternGenerator-${{ matrix.platform }}.dmg
+        run: |
+          mkdir dist/package
+          mv dist/WatchDialPatternGenerator.app dist/dependencies.txt dist/package/
+          ditto -c -k --sequesterRsrc dist/package dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip
+      - name: Verify macOS archive extraction
+        if: runner.os == 'macOS'
+        run: |
+          ditto -x -k dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip "$RUNNER_TEMP/archive-check"
+          test -x "$RUNNER_TEMP/archive-check/WatchDialPatternGenerator.app/Contents/MacOS/WatchDialPatternGenerator"
+          codesign --verify --deep --strict "$RUNNER_TEMP/archive-check/WatchDialPatternGenerator.app"
       - name: Upload download
         uses: actions/upload-artifact@v7
         with:
-          path: dist/WatchDialPatternGenerator-${{ matrix.platform }}.${{ matrix.extension }}
+          path: dist/WatchDialPatternGenerator-${{ matrix.platform }}.zip
           archive: false
           if-no-files-found: error
           retention-days: 30
