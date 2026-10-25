@@ -3,6 +3,7 @@ import tempfile
 import subprocess
 import sys
 import textwrap
+import time
 import unittest
 from concurrent.futures import Future
 from pathlib import Path
@@ -66,6 +67,24 @@ class UpdateTests(unittest.TestCase):
 
 
 class MeshTests(unittest.TestCase):
+    def test_native_viewer_signals_ready_while_still_open(self):
+        parent, on_ready = Mock(), Mock()
+        array, meta = render(pattern='brick', pixels=128)
+        session = open_inspection(parent, array, meta, on_ready=on_ready)
+        try:
+            deadline = time.monotonic() + 15
+            while not on_ready.called and time.monotonic() < deadline:
+                parent.after.call_args.args[1]()
+                time.sleep(.05)
+            on_ready.assert_called_once_with()
+            self.assertTrue(session.alive())
+        finally:
+            if session.alive():
+                session.process.terminate()
+                session.process.wait(timeout=5)
+            with patch('tkinter.messagebox.showerror'):
+                parent.after.call_args.args[1]()
+
     def test_native_viewer_polls_changes_after_startup(self):
         script = textwrap.dedent('''
             import sys, time
@@ -119,9 +138,17 @@ class MeshTests(unittest.TestCase):
             process = popen.return_value
             process.poll.return_value = None
             process.returncode = 0
-            session = open_inspection(parent, source, meta)
+            on_ready = Mock()
+            session = open_inspection(parent, source, meta, on_ready=on_ready)
             self.assertIs(session.process, process)
             path = Path(popen.call_args.args[0][-1])
+            parent.callback()
+            on_ready.assert_not_called()
+            path.with_name('ready').touch()
+            parent.callback()
+            on_ready.assert_called_once_with()
+            parent.callback()
+            on_ready.assert_called_once_with()
             with np.load(path, allow_pickle=False) as snapshot:
                 np.testing.assert_array_equal(snapshot['array'], source)
             reader = SnapshotReader(path)
@@ -134,6 +161,22 @@ class MeshTests(unittest.TestCase):
             self.assertFalse(reader.changed())
             process.poll.return_value = 0
             parent.callback()
+            self.assertFalse(path.parent.exists())
+
+    def test_launcher_restores_cursor_when_process_fails_before_ready(self):
+        parent, on_ready = Mock(), Mock()
+        source, meta = render(pattern='brick', pixels=128)
+        with patch('inspection.subprocess.Popen') as popen, \
+             patch('tkinter.messagebox.showerror') as showerror:
+            process = popen.return_value
+            process.poll.return_value = 1
+            process.returncode = 1
+            open_inspection(parent, source, meta, on_ready=on_ready)
+            path = Path(popen.call_args.args[0][-1])
+            path.with_name('error.txt').write_text('Startup failed')
+            parent.after.call_args.args[1]()
+            on_ready.assert_called_once_with()
+            showerror.assert_called_once_with('Inspection failed', 'Startup failed', parent=parent)
             self.assertFalse(path.parent.exists())
 
 

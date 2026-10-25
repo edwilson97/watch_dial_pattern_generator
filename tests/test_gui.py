@@ -58,6 +58,41 @@ class GuiTests(unittest.TestCase):
                             inputs = [c for c in w.winfo_children() if isinstance(c, (ttk.Entry, ttk.Combobox))]
                             if labels and inputs and labels[0] in {spec[0] for spec in app.FIELD_SPECS.values()}:
                                 fields[labels[0]] = (w, inputs[0])
+                    # Wheel events over inputs and labels scroll their containing panel.
+                    canvas = next(w for w in widgets if isinstance(w, tk.Canvas))
+                    aqua = root.tk.call('tk', 'windowingsystem') == 'aqua'
+                    delta = 2 if aqua else 120
+                    entry = fields['Area width (mm)'][1]
+                    original_value = entry.get()
+                    canvas.yview_moveto(0)
+                    entry.event_generate('<MouseWheel>', delta=-delta)
+                    root.update()
+                    self.assertGreater(canvas.yview()[0], 0)
+                    self.assertEqual(entry.get(), original_value)
+                    entry.event_generate('<MouseWheel>', delta=delta)
+                    root.update()
+                    self.assertEqual(canvas.yview()[0], 0)
+                    label = fields['Area width (mm)'][0].winfo_children()[0]
+                    label.event_generate('<MouseWheel>', delta=-delta)
+                    root.update()
+                    self.assertGreater(canvas.yview()[0], 0)
+                    previous_view = canvas.yview()
+                    buttons['Update preview'].event_generate('<MouseWheel>', delta=-delta)
+                    self.assertEqual(canvas.yview(), previous_view)
+                    canvas.yview_moveto(0)
+                    # Parameter dropdowns also scroll the panel without changing selection.
+                    combo.current(list(app.PATTERNS).index('fishscales'))
+                    combo.event_generate('<<ComboboxSelected>>')
+                    root.update()
+                    style = fields['Fish scales relief style'][1]
+                    canvas.yview_moveto(1)
+                    root.update()
+                    previous_view, previous_style = canvas.yview(), style.get()
+                    style.event_generate('<MouseWheel>', delta=delta)
+                    root.update()
+                    self.assertLess(canvas.yview()[0], previous_view[0])
+                    self.assertEqual(style.get(), previous_style)
+                    canvas.yview_moveto(0)
                     for index, pattern in enumerate(app.PATTERNS):
                         combo.current(index)
                         combo.event_generate('<<ComboboxSelected>>')
@@ -77,6 +112,7 @@ class GuiTests(unittest.TestCase):
                                        ('brick','Brick width (mm)'),
                                        ('brick','Brick joint width (mm)'),
                                        ('brick','Brick relief style'),
+                                       ('dimples','Dimple diameter (mm)'),
                                        ('asanoha','Asanoha line width (mm)'),
                                        ('asanoha','Asanoha relief style'),
                                        ('isometriccubes','Cube border groove (mm)'),
@@ -154,9 +190,17 @@ class GuiTests(unittest.TestCase):
                         groove.insert(0, '0.30')
                     with patch('inspection.open_inspection') as launch:
                         launch.return_value.alive.return_value = True
+                        previous_cursor = root.cget('cursor')
                         buttons['Inspect enlarged / 3D'].invoke()
                         launch.assert_called_once()
                         self.assertEqual(launch.call_args.args[1].shape, (256, 256))
+                        expected_cursor = ('spinning' if root.tk.call('tk', 'windowingsystem') == 'aqua'
+                                           else 'watch')
+                        self.assertEqual(root.cget('cursor'), expected_cursor)
+                        self.assertTrue(buttons['Inspect enlarged / 3D'].instate(['disabled']))
+                        launch.call_args.kwargs['on_ready']()
+                        self.assertEqual(root.cget('cursor'), previous_cursor)
+                        self.assertFalse(buttons['Inspect enlarged / 3D'].instate(['disabled']))
                         session = launch.return_value
 
                         def pump_until(predicate, timeout=3):
@@ -196,6 +240,12 @@ class GuiTests(unittest.TestCase):
                         pixels.insert(0, '256')
                         pump_until(lambda: session.update.call_count == 3)
                         self.assertEqual(session.update.call_args.args[1]['pattern'], 'hobnail')
+                    with patch('inspection.open_inspection', side_effect=RuntimeError('Launch failed')), \
+                         patch('tkinter.messagebox.showerror') as showerror:
+                        buttons['Inspect enlarged / 3D'].invoke()
+                        self.assertEqual(root.cget('cursor'), previous_cursor)
+                        self.assertFalse(buttons['Inspect enlarged / 3D'].instate(['disabled']))
+                        showerror.assert_called_once_with('Inspection failed', 'Launch failed')
                     buttons['Export PNG + settings'].invoke()
                     self.assertTrue(target.is_file())
                     with Image.open(target) as im:
