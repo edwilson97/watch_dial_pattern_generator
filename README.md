@@ -23,21 +23,17 @@ Users do not need to install Python or run `pip`.
 To create downloads, push this workflow to GitHub, then open **Actions → Build native
 apps → Run workflow**. It also runs on pull requests, pushes to `main`/`master`, and
 tags beginning with `v`. After a successful run, download the matching artifact
-from the run's **Artifacts** section. Downloads are provided directly, with no
-additional ZIP wrapper. On macOS, open the DMG and drag the app to Applications.
-On Windows, extract the ZIP:
-
-When testing an unmerged pull request, download its workflow artifacts. Runs on
-`main` use only changes already merged into `main`.
+from the run's **Artifacts** section and extract it. Each artifact is the ZIP itself,
+with no additional ZIP wrapper:
 
 | Download | Platform | Launch |
 | --- | --- | --- |
 | `WatchDialPatternGenerator-windows-x64.zip` | 64-bit Windows | Extract the entire folder and open `WatchDialPatternGenerator.exe` inside it. Keep `_internal` beside the executable. |
-| `WatchDialPatternGenerator-macos-arm64.dmg` | Apple Silicon Mac, macOS 15 or newer | Open the DMG, drag the app to Applications, then launch it. |
-| `WatchDialPatternGenerator-macos-x64.dmg` | Intel Mac, macOS 15 or newer | Open the DMG, drag the app to Applications, then launch it. |
+| `WatchDialPatternGenerator-macos-arm64.zip` | Apple Silicon Mac, macOS 15 or newer | Extract and open `WatchDialPatternGenerator.app`. |
+| `WatchDialPatternGenerator-macos-x64.zip` | Intel Mac, macOS 15 or newer | Extract and open `WatchDialPatternGenerator.app`. |
 
 Artifacts are kept for 30 days. For permanent public downloads, a maintainer can
-attach the download files to a GitHub Release. These builds are unsigned and macOS builds
+attach the ZIP files to a GitHub Release. These builds are unsigned and macOS builds
 are not notarized, so Windows SmartScreen or macOS Gatekeeper may require approval.
 On macOS, use **System Settings → Privacy & Security → Open Anyway** if you trust
 the downloaded build. Signing and notarization require separate certificates and
@@ -59,10 +55,8 @@ python scripts/check_bundle.py
 
 Windows output is in `dist/WatchDialPatternGenerator/`; macOS output is
 `dist/WatchDialPatternGenerator.app`. Builds use a folder bundle because VTK includes
-large native libraries. macOS packaging uses `scripts/package_macos.sh` to create a
-compressed DMG, verify its checksum, mount it, and check the app's executable
-permission and code signatures. The workflow records installed dependency versions
-in each download.
+large native libraries. macOS archives use `ditto` to preserve the app's links and
+permissions. The workflow records installed dependency versions in each download.
 
 CI runs geometry and subprocess regression tests, then checks the actual packaged
 app's Tk/Pillow initialization, VTK mesh construction, and 8/16-bit PNG plus JSON
