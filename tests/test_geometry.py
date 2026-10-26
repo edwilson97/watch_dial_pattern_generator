@@ -5,6 +5,37 @@ from PIL import Image
 from dial_patterns import render, render_preview, PATTERN_FIELDS, FIELD_SPECS
 
 class GeometryTests(unittest.TestCase):
+    def test_horizontal_ribbing_square_profile_and_dimensions(self):
+        options = dict(pattern='horizontalribbing', pixels=512, size_mm=8,
+                       pitch_mm=1, groove_width_mm=.25)
+        array, meta = render(**options)
+        self.assertEqual(array.shape, (512, 512))
+        self.assertEqual(array.dtype, np.uint16)
+        self.assertEqual(set(np.unique(array)), {0, 65535})
+        # Every row is uniform; exactly 16 samples per .25 mm channel,
+        # with 48 samples per .75 mm raised rib in each 64-sample repeat.
+        np.testing.assert_array_equal(array, np.broadcast_to(array[:, :1], array.shape))
+        for repeat in array[:, 0].reshape(8, 64):
+            self.assertEqual(np.count_nonzero(repeat == 0), 16)
+            self.assertEqual(np.count_nonzero(repeat == 65535), 48)
+        self.assertEqual(meta['groove_width_mm'], .25)
+        self.assertEqual(meta['pitch_mm'], 1)
+        rotated, _ = render(**options, rotation=90)
+        np.testing.assert_array_equal(rotated, array.T)
+        shifted, _ = render(**options, phase=.25)
+        np.testing.assert_array_equal(shifted, np.roll(array, -16, axis=0))
+        inverted, _ = render(**options, invert=True)
+        np.testing.assert_array_equal(inverted, 65535 - array)
+        wider, _ = render(**{**options, 'groove_width_mm': .5})
+        self.assertGreater(np.count_nonzero(wider == 0), np.count_nonzero(array == 0))
+        self.assertEqual(set(PATTERN_FIELDS['horizontalribbing']),
+                         {'pitch_mm', 'groove_width_mm', 'rotation', 'phase'})
+
+    def test_horizontal_ribbing_invalid_grooves(self):
+        for width in (-.1, 0, .75, 1, float('nan'), float('inf')):
+            with self.subTest(width=width), self.assertRaises(ValueError):
+                render(pattern='horizontalribbing', pixels=128, groove_width_mm=width)
+
     def test_lattice_previews_preserve_export_appearance(self):
         for pattern in ('asanoha', 'isometriccubes'):
             with self.subTest(pattern=pattern):

@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageTk
 
-__version__ = '1.1.1'
+__version__ = '1.2.0'
 
 PATTERNS = {
     'hobnail': 'Clous de Paris / Hobnail',
@@ -23,6 +23,7 @@ PATTERNS = {
     'fishscales': 'Fish Scales',
     'flinque': 'Flinqué (radiating waves)',
     'wave': 'Wave (parallel sinusoidal ridges)',
+    'horizontalribbing': 'Horizontal Ribbing (square edges)',
     'annularwave': 'Annular Wave (concentric ripples)',
     'graindorge': 'Grain d’Orge (interlaced grains)',
     'flamme': 'Flamme (radial flames)',
@@ -38,7 +39,7 @@ PATTERNS = {
     'isometriccubes': 'Isometric Cubes',
     'fanscallop': 'Fan / Scallop',
     'asanoha': 'Asanoha (hemp leaf geometry)',
-    'brick': 'Brick / Running Bond',
+    'brick': 'Brick / Running Bond / Herringbone',
     'dimples': 'Dimples (golf ball texture)',
 
 }
@@ -47,6 +48,7 @@ ENUM_FIELDS = {
     'asanoha_style': ('faceted', 'rounded', 'engraved'),
     'fishscales_style': ('rounded', 'faceted', 'engraved'),
     'brick_style': ('faceted', 'engraved', 'rounded'),
+    'brick_layout': ('running_bond', 'herringbone'),
 }
 
 
@@ -255,17 +257,38 @@ def _perlage_height(u, v, pitch_mm, ring_pitch_mm, overlap):
     return h
 
 
-def _brick_height(u_mm, v_mm, width_mm, height_mm, joint_mm, bevel_mm, stagger, style):
-    """Repeatable running-bond rectangular displacement geometry, no illumination.
+def _brick_height(u_mm, v_mm, width_mm, height_mm, joint_mm, bevel_mm, stagger, style,
+                  layout='running_bond'):
+    """Repeatable rectangular displacement geometry, no illumination.
 
     u_mm/v_mm are physically rotated coordinates. 50% offset means successive
     rows alternate by half a brick. Joint thickness is shared between bricks.
     """
-    row = np.floor(v_mm / height_mm).astype(np.int64)
-    # Alternating stagger; a full cycle every two courses.
-    shift = (row % 2) * stagger * width_mm
-    local_x = np.mod(u_mm - shift, width_mm)
-    local_y = np.mod(v_mm, height_mm)
+    if layout == 'herringbone':
+        # Each lattice cell contains one horizontal and one vertical brick.
+        # Translations (length, length) and (-thickness, thickness) tile the
+        # plane exactly, including noninteger length/thickness ratios.
+        if width_mm < height_mm:
+            u_mm, v_mm = v_mm, u_mm
+            width_mm, height_mm = height_mm, width_mm
+        diagonal = u_mm + v_mm
+        course = np.floor(diagonal / (2 * width_mm))
+        across = np.mod(v_mm - course * width_mm, height_mm)
+        along = diagonal - 2 * course * width_mm - across
+        horizontal = (along >= 0) & (along < width_mm)
+        course_v = np.floor((diagonal - width_mm) / (2 * width_mm))
+        across_v = np.mod(u_mm - (course_v + 1) * width_mm, height_mm)
+        along_v = diagonal - (2 * course_v + 1) * width_mm - across_v
+        local_x = np.where(horizontal, along, along_v)
+        local_y = np.where(horizontal, across, across_v)
+    elif layout == 'running_bond':
+        row = np.floor(v_mm / height_mm).astype(np.int64)
+        # Alternating stagger; a full cycle every two courses.
+        shift = (row % 2) * stagger * width_mm
+        local_x = np.mod(u_mm - shift, width_mm)
+        local_y = np.mod(v_mm, height_mm)
+    else:
+        raise ValueError('Unknown brick layout')
     edge_x = np.minimum(local_x, width_mm - local_x)
     edge_y = np.minimum(local_y, height_mm - local_y)
     # Distance from closest edge, in real physical millimeters.
@@ -301,7 +324,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
            secondary_pitch_mm=1.2, angle_deg=60.0, segments=12,
            line_width_mm=0.055, cube_gap_mm=0.04, cube_step_fraction=0.28, asanoha_style='faceted', fishscales_style='rounded', brick_width_mm=1.20, brick_height_mm=0.60,
            brick_joint_mm=0.10, brick_bevel_mm=0.08, brick_row_offset=0.50, brick_style='faceted',
-           perlage_ring_pitch_mm=0.1, perlage_overlap=0.5, dimple_diameter_mm=0.65):
+           perlage_ring_pitch_mm=0.1, perlage_overlap=0.5, dimple_diameter_mm=0.65,
+           brick_layout='running_bond'):
     """Return uint16 height map and metadata. White = high, black = low.
 
     depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
@@ -325,6 +349,9 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
             raise ValueError('Tapisserie groove width must be >= 0 and less than pitch')
         if bevel_width_mm < 0 or 2 * bevel_width_mm > pitch_mm - groove_width_mm:
             raise ValueError('Bevel width must be >= 0 and <= half the raised square width')
+    if pattern == 'horizontalribbing':
+        if not math.isfinite(pitch_mm) or not 0 < groove_width_mm < pitch_mm:
+            raise ValueError('Horizontal ribbing groove width must be positive and smaller than pitch')
     if not 0 <= top_width_mm < pitch_mm:
         raise ValueError('top width must be >= 0 and smaller than pitch')
     if wave_meander_mm < 0 or not 0 <= ridge_height_fraction <= 1:
@@ -352,6 +379,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
             raise ValueError('Brick bevel must fit within the raised brick dimensions')
         if brick_style not in ENUM_FIELDS['brick_style']:
             raise ValueError('Invalid brick style')
+        if brick_layout not in ENUM_FIELDS['brick_layout']:
+            raise ValueError('Invalid brick layout')
     if pattern == 'dimples':
         if not math.isfinite(pitch_mm) or not 0 < dimple_diameter_mm <= pitch_mm:
             raise ValueError('Dimple diameter must be positive and no larger than the pattern pitch')
@@ -375,7 +404,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
     elif pattern == 'brick':
         h = _brick_height(u * pitch_mm + phase * brick_width_mm,
                           v * pitch_mm, brick_width_mm, brick_height_mm,
-                          brick_joint_mm, brick_bevel_mm, brick_row_offset, brick_style)
+                          brick_joint_mm, brick_bevel_mm, brick_row_offset, brick_style,
+                          brick_layout)
     elif pattern == 'hobnail':
         h = 1 - 2 * np.maximum(np.abs(frac(u + phase) - .5), np.abs(frac(v + phase) - .5))
         # A true truncated pyramid: fixed top plateau width in physical mm.
@@ -419,6 +449,11 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
         h = np.clip(h, 0, 1)
     elif pattern == 'fishscales':
         h = _fishscales_height(u + phase, v + phase, fishscales_style, softness)
+    elif pattern == 'horizontalribbing':
+        # Flat raised ribs and flat-bottomed channels with vertical walls.
+        # Center grooves on integer cycles; phase shifts across the ribs.
+        distance_mm = np.abs(frac(v + phase + .5) - .5) * pitch_mm
+        h = (distance_mm >= groove_width_mm / 2).astype(np.float32)
     elif pattern == 'wave':
         # Independent physical lateral meander and vertical ridge height.
         lateral = wave_meander_mm / pitch_mm + .45 * softness
@@ -537,7 +572,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
                 line_width_mm=line_width_mm, cube_gap_mm=cube_gap_mm, cube_step_fraction=cube_step_fraction, asanoha_style=asanoha_style, fishscales_style=fishscales_style, brick_width_mm=brick_width_mm,
                 brick_height_mm=brick_height_mm, brick_joint_mm=brick_joint_mm,
                 brick_bevel_mm=brick_bevel_mm, brick_row_offset=brick_row_offset,
-                brick_style=brick_style, perlage_ring_pitch_mm=perlage_ring_pitch_mm,
+                brick_style=brick_style, brick_layout=brick_layout,
+                perlage_ring_pitch_mm=perlage_ring_pitch_mm,
                 perlage_overlap=perlage_overlap, dimple_diameter_mm=dimple_diameter_mm,
                 grayscale='white=highest; black=deepest',
                 pixel_pitch_mm=size_mm/pixels,
@@ -574,6 +610,7 @@ PATTERN_FIELDS = {
     'fishscales': ('pitch_mm', 'rotation', 'phase', 'softness', 'fishscales_style'),
     'flinque': ('pitch_mm', 'phase', 'softness'),
     'wave': ('pitch_mm', 'rotation', 'phase', 'wave_meander_mm', 'ridge_height_fraction'),
+    'horizontalribbing': ('pitch_mm', 'groove_width_mm', 'rotation', 'phase'),
     'annularwave': ('pitch_mm', 'phase', 'ridge_height_fraction'),
     'graindorge': ('pitch_mm', 'rotation', 'phase', 'amplitude', 'grain_aspect'),
     'flamme': ('grooves', 'secondary_pitch_mm', 'phase', 'amplitude', 'flame_taper'),
@@ -589,7 +626,7 @@ PATTERN_FIELDS = {
     'isometriccubes': ('pitch_mm', 'rotation', 'phase', 'cube_gap_mm', 'cube_step_fraction'),
     'fanscallop': ('pitch_mm', 'rotation', 'phase', 'amplitude'),
     'asanoha': ('pitch_mm', 'rotation', 'phase', 'line_width_mm', 'asanoha_style'),
-    'brick': ('brick_width_mm', 'brick_height_mm', 'brick_joint_mm', 'brick_bevel_mm', 'brick_row_offset', 'brick_style', 'rotation', 'phase'),
+    'brick': ('brick_layout', 'brick_width_mm', 'brick_height_mm', 'brick_joint_mm', 'brick_bevel_mm', 'brick_row_offset', 'brick_style', 'rotation', 'phase'),
     'dimples': ('pitch_mm', 'dimple_diameter_mm', 'rotation', 'phase'),
 
 }
@@ -629,6 +666,7 @@ FIELD_SPECS = {
     'brick_bevel_mm': ('Brick bevel width (mm)', '0.08'),
     'brick_row_offset': ('Brick row offset (0–1)', '0.50'),
     'brick_style': ('Brick relief style', 'faceted'),
+    'brick_layout': ('Brick layout', 'running_bond'),
     'dimple_diameter_mm': ('Dimple diameter (mm)', '0.65'),
 }
 
@@ -642,7 +680,7 @@ FIELD_TOOLTIPS = {
     'phase': 'Shift where the pattern starts. Enter a number in pattern repeats; try 0.5 for a half-repeat shift.',
     'softness': 'Enter 0 to 1 to adjust the pattern shape. Higher values soften relief or add waviness, depending on the pattern.',
     'grooves': 'Enter a whole number of radial grooves or repeating features around the center, at least 4.',
-    'groove_width_mm': 'Enter the width of the recessed channels between squares in millimeters. Use 0 or more, less than the pattern pitch.',
+    'groove_width_mm': 'Enter recessed channel width in millimeters, smaller than pattern pitch. For Tapisserie, channels separate squares and 0 is allowed. For Horizontal Ribbing, use greater than 0; rib width equals pitch minus groove width, with vertical sides.',
     'bevel_width_mm': 'Enter the width of each sloped square edge in millimeters. Use 0 for sharp edges; slopes must fit within half the raised square width.',
     'background': 'Set the height outside the circle: 0 is deepest (black), 1 is highest (white), and values between give intermediate heights.',
     'top_width_mm': 'Enter the flat top width of each hobnail in millimeters. Use 0 for pointed tops, or a value smaller than the pattern pitch.',
@@ -661,12 +699,13 @@ FIELD_TOOLTIPS = {
     'fishscales_style': 'Choose soft curved scales (rounded), angled scales (faceted), or scale outlines cut into a flat surface (engraved).',
     'cube_gap_mm': 'Enter the groove width between cubes in millimeters, greater than 0 and less than half the pattern pitch.',
     'cube_step_fraction': 'Enter a value greater than 0 and less than 0.5 for the height difference between cube faces. Larger values make the steps deeper.',
-    'brick_width_mm': 'Enter the horizontal size of each repeating brick in millimeters, greater than 0.',
-    'brick_height_mm': 'Enter the vertical size of each brick row in millimeters, greater than 0.',
+    'brick_width_mm': 'Enter one brick dimension in millimeters, greater than 0. In Running Bond this is horizontal; Herringbone alternates brick directions by 90 degrees.',
+    'brick_height_mm': 'Enter the other brick dimension in millimeters, greater than 0. In Running Bond this is the row height; Herringbone alternates brick directions by 90 degrees.',
     'brick_joint_mm': 'Enter the gap between bricks in millimeters. Use 0 or more, smaller than both the brick width and height.',
     'brick_bevel_mm': 'Enter the sloped edge width of each brick in millimeters. Use 0 for sharp edges; slopes must fit within half the raised brick width and height.',
-    'brick_row_offset': 'Enter 0 to 1 to shift alternate brick rows. Use 0 for aligned joints or 0.5 for a half-brick shift.',
+    'brick_row_offset': 'Running Bond only: enter 0 to 1 to shift alternate brick rows. Use 0 for aligned joints or 0.5 for a half-brick shift. Herringbone ignores this setting.',
     'brick_style': 'Choose bricks with sloped edges (faceted), soft tops (rounded), or joints cut into a flat surface (engraved).',
+    'brick_layout': 'Choose running_bond for staggered rows, or herringbone for interlocking zigzag bricks at 90 degrees. Use Rotation to turn the whole layout.',
     'dimple_diameter_mm': 'Enter the diameter of each round recess in millimeters, greater than 0 and no larger than the pattern pitch. Set diameter equal to pitch for touching edges. Pitch sets center-to-center spacing; target depth sets the bowl depth.',
     'perlage_ring_pitch_mm': 'Enter the spacing between fine rings within each circular mark in millimeters, greater than 0.',
     'perlage_overlap': 'Enter 0 to 0.5 for how much neighboring circular marks overlap. Use 0 for touching marks or 0.5 for the most overlap.',
@@ -706,11 +745,10 @@ def run_gui():
                              yscrollincrement=16)
     field_scroll = ttk.Scrollbar(scroll_holder, orient='vertical', command=field_canvas.yview)
     field_canvas.configure(yscrollcommand=field_scroll.set)
-    field_canvas.pack(side='left', fill='y')
+    field_canvas.pack(side='left', fill='both', expand=True)
     field_scroll.pack(side='left', fill='y')
     field_frame = ttk.Frame(field_canvas)
     field_canvas.create_window((0,0), window=field_frame, anchor='nw')
-    field_frame.bind('<Configure>', lambda e: field_canvas.configure(scrollregion=field_canvas.bbox('all')))
     values = {key: tk.StringVar(value=default) for key, (_, default) in FIELD_SPECS.items()}
     field_rows = {}
     field_inputs = {}
@@ -726,6 +764,14 @@ def run_gui():
         add_tooltip(widget, FIELD_TOOLTIPS[key])
         field_rows[key] = row
         field_inputs[key] = widget
+
+    def size_parameter_viewport(event=None):
+        # Include hidden rows so switching patterns never clips a wider field
+        # or changes the width of the parameter column.
+        width = max(row.winfo_reqwidth() for row in field_rows.values())
+        field_canvas.configure(width=width, scrollregion=field_canvas.bbox('all'))
+
+    field_frame.bind('<Configure>', size_parameter_viewport)
 
     scroll_remainder = 0.0
     windowing_system = root.tk.call('tk', 'windowingsystem')
@@ -777,7 +823,7 @@ def run_gui():
     add_tooltip(ttk.Checkbutton(left, text='Circular mask', variable=circular),
                 'Keep the pattern inside a circle. Use Outside-circle level to set the height of the surrounding area.').pack(anchor='w')
     ttk.Label(right, text='Grayscale height map preview', font=('TkDefaultFont', 13, 'bold')).pack(anchor='w')
-    preview_label = ttk.Label(right)
+    preview_label = ttk.Label(right, anchor='center')
     preview_label.pack(fill='both', expand=True, pady=10)
     status = tk.StringVar(value='Preview is a reduced-resolution sample.')
     ttk.Label(right, textvariable=status, wraplength=480).pack(anchor='w', pady=8)
@@ -823,6 +869,9 @@ def run_gui():
 
     def update_preview():
         nonlocal preview_params
+        field_inputs['brick_row_offset'].configure(
+            state='disabled' if selected_pattern() == 'brick' and
+            values['brick_layout'].get() == 'herringbone' else 'normal')
         try:
             current_params = params()
             im, meta = render_preview(**current_params)
@@ -881,8 +930,6 @@ def run_gui():
             widget.bind('<<ComboboxSelected>>', lambda event: update_preview())
     circular.trace_add('write', lambda *_: refresh_fields())
     invert.trace_add('write', lambda *_: update_preview())
-    add_tooltip(ttk.Button(left, text='Update preview', command=update_preview),
-                'Redraw the small preview using your current settings. White areas are high and black areas are deep.').pack(fill='x', pady=(12, 5))
     def inspect_relief():
         previous_cursor = root.cget('cursor')
 
@@ -906,7 +953,7 @@ def run_gui():
 
     inspect_button = ttk.Button(left, text='Inspect enlarged / 3D', command=inspect_relief)
     add_tooltip(inspect_button,
-                'Open a larger view to zoom in and explore the surface in 3D. It updates as you change settings.').pack(fill='x', pady=(0, 5))
+                'Open a larger view to zoom in and explore the surface in 3D. It updates as you change settings.').pack(fill='x', pady=(12, 5))
     add_tooltip(ttk.Button(left, text='Reset to defaults', command=reset_all),
                 'Restore the starting pattern and all original settings, including settings for other patterns.').pack(fill='x', pady=(0, 5))
     add_tooltip(ttk.Button(left, text='Export PNG + settings', command=export),
@@ -940,7 +987,8 @@ def main():
     parser.add_argument('--invert', action='store_true')
     parser.add_argument('--circular', action='store_true')
     parser.add_argument('--background', type=float, default=0)
-    parser.add_argument('--groove-width-mm', type=float, default=0.20, help='Tapisserie recessed channel width')
+    parser.add_argument('--groove-width-mm', type=float, default=0.20,
+                        help='Recessed channel width for Tapisserie or Horizontal Ribbing')
     parser.add_argument('--bevel-width-mm', type=float, default=0.08, help='Tapisserie slope width on each square edge')
     parser.add_argument('--top-width-mm', type=float, default=0)
     parser.add_argument('--wave-meander-mm', type=float, default=0)
@@ -964,6 +1012,8 @@ def main():
     parser.add_argument('--brick-bevel-mm', type=float, default=.08)
     parser.add_argument('--brick-row-offset', type=float, default=.5)
     parser.add_argument('--brick-style', choices=ENUM_FIELDS['brick_style'], default='faceted')
+    parser.add_argument('--brick-layout', choices=ENUM_FIELDS['brick_layout'], default='running_bond',
+                        help='Staggered rows or interlocking perpendicular herringbone bricks')
     parser.add_argument('--perlage-ring-pitch-mm', type=float, default=.1)
     parser.add_argument('--perlage-overlap', type=float, default=.5)
     parser.add_argument('--dimple-diameter-mm', type=float, default=.65,

@@ -1,8 +1,8 @@
 # Watch Dial Pattern Generator
 
-Current version: **1.1.1**. See [release notes](RELEASE-NOTES.md) for changes.
+Current version: **1.2.0**. See [release notes](RELEASE-NOTES.md) for changes.
 
-A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 25 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
+A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 26 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
 ## Donate/Sponsor
 
@@ -246,11 +246,33 @@ python3 dial_patterns.py --help
 
 To see all available options for the CLI, use the `-h` or `--help` command line parameter.
 
-Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, and `dimples`.
+Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, and `dimples`.
 
-[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 25 patterns.
+[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 26 patterns.
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
+
+For **Brick / Running Bond / Herringbone**, choose **Brick layout → herringbone**
+to create interlocking zigzag bricks alternating at 90 degrees. Brick dimensions,
+joint width, bevel width, and all three relief styles work with either layout.
+Use **Rotation** to turn the layout (for example, 45 degrees). Row offset applies
+only to Running Bond and is disabled for Herringbone. Running Bond remains the default.
+
+```bash
+python3 dial_patterns.py --cli --pattern brick --brick-layout herringbone --brick-width-mm 1.2 --brick-height-mm 0.6 --rotation 45 --output herringbone.png
+```
+
+**Horizontal Ribbing (square edges)** creates continuous flat-topped horizontal
+ribs separated by flat-bottomed channels with vertical, 90-degree sides. Pattern
+pitch is the repeat spacing; groove width is the recessed part, so raised rib
+width equals pitch minus groove width. Groove width must be greater than zero
+and smaller than pitch. Rotation and pattern offset turn and shift the ribs;
+target depth sets the intended relief depth in the exported metadata. The default
+0.75 mm pitch and 0.20 mm groove leave 0.55 mm raised ribs.
+
+```bash
+python3 dial_patterns.py --cli --pattern horizontalribbing --pitch-mm 0.75 --groove-width-mm 0.20 --depth-mm 0.15 --output horizontal_ribbing.png
+```
 
 The GUI remembers edited pitch values per pattern until **Reset to defaults**.
 
@@ -297,11 +319,11 @@ python3 dial_patterns.py --cli --pattern dimples --pitch-mm 0.75 \
 python3 -m tests.test_patterns
 ```
 
-This tests all 25 generators and PNG exports and creates `images/pattern_catalog.png`.
+This tests all 26 generators and PNG exports and creates `images/pattern_catalog.png`.
 
 ## Full test suite (including real Tkinter GUI interaction)
 
-The test runner exercises all 25 mathematical pattern renderers and GUI workflows.
+The test runner exercises all 26 mathematical pattern renderers and GUI workflows.
 It opens a real Tk window, selects every pattern, verifies visible parameter controls,
 updates a preview, invokes the GUI export button, and verifies 8/16-bit PNG and JSON output.
 Native save dialogs and message boxes are mocked to make tests deterministic.
