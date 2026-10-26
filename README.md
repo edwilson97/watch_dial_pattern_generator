@@ -141,28 +141,6 @@ Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisse
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
-For **Brick / Running Bond / Herringbone**, choose **Brick layout → herringbone**
-to create interlocking zigzag bricks alternating at 90 degrees. Brick dimensions,
-joint width, bevel width, and all three relief styles work with either layout.
-Use **Rotation** to turn the layout (for example, 45 degrees). Row offset applies
-only to Running Bond and is disabled for Herringbone. Running Bond remains the default.
-
-```bash
-python3 dial_patterns.py --cli --pattern brick --brick-layout herringbone --brick-width-mm 1.2 --brick-height-mm 0.6 --rotation 45 --output herringbone.png
-```
-
-**Horizontal Ribbing (square edges)** creates continuous flat-topped horizontal
-ribs separated by flat-bottomed channels with vertical, 90-degree sides. Pattern
-pitch is the repeat spacing; groove width is the recessed part, so raised rib
-width equals pitch minus groove width. Groove width must be greater than zero
-and smaller than pitch. Rotation and pattern offset turn and shift the ribs;
-target depth sets the intended relief depth in the exported metadata. The default
-0.75 mm pitch and 0.20 mm groove leave 0.55 mm raised ribs.
-
-```bash
-python3 dial_patterns.py --cli --pattern horizontalribbing --pitch-mm 0.75 --groove-width-mm 0.20 --depth-mm 0.15 --output horizontal_ribbing.png
-```
-
 The GUI remembers edited pitch values per pattern until **Reset to defaults**.
 
 The grayscale preview refreshes when you edit a parameter and move focus to another
@@ -177,22 +155,6 @@ source pixels, increase **Output pixels / side** (try 4096 for a 28.5 mm dial);
 if it reports too few mesh samples, select Auto or reduce the crop width.
 For Asanoha, **engraved** leaves flat interiors between recessed lines, while
 **faceted** and **rounded** add sculpted relief between them.
-
-## Dimples (golf ball texture)
-
-Select **Dimples (golf ball texture)** for staggered rows of round recessed bowls
-with flat land between them. **Pattern pitch** sets center-to-center spacing;
-**Dimple diameter** sets the opening diameter and must be positive and no larger
-than the pitch. Set diameter equal to pitch for touching dimple edges; larger
-pitch leaves flat space between them. Defaults are 0.75 mm pitch and 0.65 mm diameter. **Target depth**
-sets the design relief depth. Rotation, pattern offset, inversion, circular masking,
-and live 3D inspection are supported. White is the flat surface; black is the
-bottom of a dimple.
-
-```bash
-python3 dial_patterns.py --cli --pattern dimples --pitch-mm 0.75 \
-  --dimple-diameter-mm 0.65 --depth-mm 0.15 --output dimples.png
-```
 
 ## Interpretation and limitations
 
