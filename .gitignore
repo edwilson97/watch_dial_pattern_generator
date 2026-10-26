@@ -4,3 +4,6 @@ __pycache__/
 .DS_Store
 build/
 dist/
+
+# Local environment and signing configuration
+/ENVIRONMENT.md
