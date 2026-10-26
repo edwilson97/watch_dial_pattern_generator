@@ -72,6 +72,26 @@ class GuiTests(unittest.TestCase):
                     entry.event_generate('<MouseWheel>', delta=delta)
                     root.update()
                     self.assertEqual(canvas.yview()[0], 0)
+                    precise_scroll = bool(root.tk.call('info', 'commands', 'tk::PreciseScrollDeltas'))
+                    if precise_scroll:
+                        # Tk 9 sends real trackpad gestures as packed X/Y deltas,
+                        # rather than the MouseWheel events tested above.
+                        entry.event_generate('<TouchpadScroll>', delta=(3 << 16) | (-32 & 0xffff))
+                        root.update()
+                        self.assertGreater(canvas.yview()[0], 0)
+                        self.assertEqual(entry.get(), original_value)
+                        entry.event_generate('<TouchpadScroll>', delta=32)
+                        root.update()
+                        self.assertEqual(canvas.yview()[0], 0)
+                        entry.event_generate('<TouchpadScroll>', delta=3 << 16)
+                        root.update()
+                        self.assertEqual(canvas.yview()[0], 0)
+                        # Small deltas accumulate instead of being discarded.
+                        for _ in range(16):
+                            entry.event_generate('<TouchpadScroll>', delta=0xffff)
+                        root.update()
+                        self.assertGreater(canvas.yview()[0], 0)
+                        canvas.yview_moveto(0)
                     label = fields['Area width (mm)'][0].winfo_children()[0]
                     label.event_generate('<MouseWheel>', delta=-delta)
                     root.update()
@@ -92,6 +112,14 @@ class GuiTests(unittest.TestCase):
                     root.update()
                     self.assertLess(canvas.yview()[0], previous_view[0])
                     self.assertEqual(style.get(), previous_style)
+                    if precise_scroll:
+                        canvas.yview_moveto(1)
+                        root.update()
+                        previous_view = canvas.yview()
+                        style.event_generate('<TouchpadScroll>', delta=32)
+                        root.update()
+                        self.assertLess(canvas.yview()[0], previous_view[0])
+                        self.assertEqual(style.get(), previous_style)
                     canvas.yview_moveto(0)
                     for index, pattern in enumerate(app.PATTERNS):
                         combo.current(index)

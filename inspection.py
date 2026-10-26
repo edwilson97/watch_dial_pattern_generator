@@ -2,6 +2,7 @@
 import importlib.util
 from concurrent.futures import ThreadPoolExecutor
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -178,6 +179,16 @@ def relief_mesh(array, span_mm, depth_mm, max_samples=401):
     return mesh
 
 
+def inspection_samples(meta, span_mm):
+    """Keep several mesh samples across narrow lattice grooves when available."""
+    width_field = {'asanoha': 'line_width_mm', 'isometriccubes': 'cube_gap_mm'}.get(meta.get('pattern'))
+    width = meta.get(width_field) if width_field else None
+    if width is None or not math.isfinite(width) or width <= 0:
+        return 401
+    # Bound navigation cost for a whole dial; zooming in recovers finer detail.
+    return min(1601, max(401, math.ceil(span_mm / width * 8) + 1))
+
+
 class ReliefViewer:
     """A native VTK window with continuous mouse navigation and live controls."""
     def __init__(self, array, meta, *, off_screen=False):
@@ -186,7 +197,7 @@ class ReliefViewer:
         self.array = array
         self.meta = meta
         self.settings = dict(span=min(4., meta['size_mm']), x=0., y=0.,
-                             exaggeration=1., samples=401)
+                             exaggeration=1., samples=None)
         self.height_colors = False
         self.gray = False
         self.mesh = None
@@ -221,7 +232,8 @@ class ReliefViewer:
             self.compact_slider(widget)
             self.sliders[key] = widget
         detail_widget = self.plotter.add_text_slider_widget(
-            self.set_detail, ['Mesh: Fast (201)', 'Mesh: Balanced (401)', 'Mesh: Fine (801)'], value=1,
+            self.set_detail, ['Mesh: Fast (201)', 'Mesh: Balanced (401)', 'Mesh: Fine (801)',
+                              'Mesh: Auto (groove detail)'], value=3,
             pointa=(.58,.06), pointb=(.96,.06),
             style='modern', color='#cad5e3', interaction_event='end')
         self.compact_slider(detail_widget)
@@ -258,6 +270,10 @@ class ReliefViewer:
                 self.plotter.add_text('Live update paused: '+str(exc), position='lower_left',
                                       font_size=10, name='update-error')
         self.plotter.iren.add_observer('TimerEvent', refresh)
+        # Win32 timers capture the native window handle when created. Before
+        # Initialize it is null, so their events never reach this viewer.
+        if not self.plotter.iren.initialized:
+            self.plotter.iren.initialize()
         self.plotter.iren.create_timer(150)
 
     @staticmethod
@@ -283,7 +299,7 @@ class ReliefViewer:
 
     def set_detail(self, value):
         samples = {'Mesh: Fast (201)': 201, 'Mesh: Balanced (401)': 401,
-                   'Mesh: Fine (801)': 801}[value]
+                   'Mesh: Fine (801)': 801, 'Mesh: Auto (groove detail)': None}[value]
         if samples != self.settings['samples']:
             self.settings['samples'] = samples
             self.update_surface()
@@ -292,7 +308,10 @@ class ReliefViewer:
         crop, span = crop_map(self.array, self.meta, self.settings['span'],
                               self.settings['x'], self.settings['y'])
         self.crop, self.span = crop, span
-        self.mesh = relief_mesh(crop, span, self.meta['depth_mm'], self.settings['samples'])
+        samples = self.settings['samples']
+        if samples is None:
+            samples = inspection_samples(self.meta, span)
+        self.mesh = relief_mesh(crop, span, self.meta['depth_mm'], samples)
         camera = self.plotter.camera_position if self.actor is not None else None
         self.actor = self.plotter.add_mesh(
             self.mesh, name='relief', color='#bcc8d7', smooth_shading=False,
@@ -324,11 +343,21 @@ class ReliefViewer:
 
     def update_status(self):
         mode = 'HEIGHT MAP (source pixels)' if self.gray else '3D SURFACE'
+        detail_note = ''
+        width_field = {'asanoha': 'line_width_mm', 'isometriccubes': 'cube_gap_mm'}.get(self.meta.get('pattern'))
+        width = self.meta.get(width_field) if width_field else None
+        if width and width > 0:
+            source_spacing = self.span / self.crop.shape[0]
+            mesh_spacing = self.span / max(1, self.mesh.dimensions[0] - 1)
+            if width / source_spacing < 4:
+                detail_note = '\nGrooves have few source pixels: increase Output pixels / side.'
+            elif not self.gray and width / mesh_spacing < 4:
+                detail_note = '\nGrooves have few mesh samples: choose Auto or a smaller crop.'
         self.plotter.add_text(
             f'{self.meta["pattern_name"]} | {mode}\n'
             f'INSPECTION ONLY | {self.span:.3f} mm crop | Z x{self.settings["exaggeration"]:g}\n'
             f'{self.crop.shape[0]} source pixels | {self.mesh.dimensions[0]} mesh samples / side\n'
-            f'Design depth: {self.meta["depth_mm"]:.3f} mm | depth is not laser calibration',
+            f'Design depth: {self.meta["depth_mm"]:.3f} mm | depth is not laser calibration{detail_note}',
             position='upper_right', font_size=10, color='#d5dce5', name='status')
 
     def fit(self):

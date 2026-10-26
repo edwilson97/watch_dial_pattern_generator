@@ -1,7 +1,11 @@
 # Release Notes
 
-## Unreleased
+## v1.1.1 — Live viewer and preview fixes
 
+- Fixed live 3D updates on Windows by initializing the native viewer window before creating its polling timer. Added regression coverage to the Windows build workflow.
+- Improved small-preview fidelity with a denser render and filtered reduction to retain narrow grooves and avoid false lattice patterns.
+- Added automatic 3D mesh detail for Asanoha and Isometric Cubes, with guidance when source pixels or mesh samples cannot resolve narrow grooves.
+- Fixed Tk 9 trackpad scrolling in the parameter panel, including packed vertical deltas and accumulation of small gestures.
 - Added Windows executable signing through Azure Artifact Signing with GitHub OIDC, SHA-256, and timestamp verification before packaging. Requires the Entra application and GitHub environment setup described in the README.
 
 ## v1.1.0 — Dimples and GUI improvements
