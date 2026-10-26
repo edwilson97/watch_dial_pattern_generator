@@ -1,5 +1,14 @@
 # Release Notes
 
+## v1.2.0 — Herringbone, horizontal ribbing, and layout improvements
+
+- Added a Herringbone layout to Brick with interlocking perpendicular bricks. Supports existing dimensions, joints, bevels, relief styles, rotation, phase, and CLI/settings exports. Running Bond remains the default; row offset is disabled for Herringbone.
+- Added Horizontal Ribbing with flat raised ribs, flat-bottomed grooves, and vertical 90-degree sides. Pitch, groove width, rotation, and offset are adjustable in the GUI and CLI.
+- Removed the redundant Update preview button; previews refresh automatically when leaving an edited numeric field or changing a dropdown or checkbox.
+- Centered the preview within its section as the main window resizes.
+- Sized the scrollable parameter section to the widest input row, including fields for other patterns, to prevent clipping.
+- Updated the pattern catalog to include all 26 pattern families and expanded geometry, export, and GUI regression coverage.
+
 ## v1.1.1 — Live viewer and preview fixes
 
 - Fixed live 3D updates on Windows by initializing the native viewer window before creating its polling timer. Added regression coverage to the Windows build workflow.

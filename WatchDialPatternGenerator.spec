@@ -47,6 +47,6 @@ if sys.platform == 'darwin':
         bundle_identifier='com.bridgewatches.watchdialpatterngenerator',
         info_plist={
             'NSHighResolutionCapable': True,
-            'CFBundleShortVersionString': '1.1.1',
+            'CFBundleShortVersionString': '1.2.0',
         },
     )

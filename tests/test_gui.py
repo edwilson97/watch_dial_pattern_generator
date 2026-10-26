@@ -29,14 +29,14 @@ class GuiTests(unittest.TestCase):
                     combo = next(w for w in widgets if isinstance(w, ttk.Combobox) and tuple(w.cget('values')) == tuple(app.PATTERNS.values()))
                     buttons = {w.cget('text'): w for w in widgets if isinstance(w, ttk.Button)}
                     self.assertIn('Export PNG + settings', buttons)
-                    self.assertIn('Update preview', buttons)
+                    self.assertNotIn('Update preview', buttons)
                     self.assertIn('Reset to defaults', buttons)
                     # Every editable control has help, including hidden pattern fields.
                     controls = [w for w in widgets if isinstance(
                         w, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Checkbutton))]
                     self.assertTrue(all(w.tooltip.text for w in controls))
                     # Hover help appears without stealing focus, then closes on exit.
-                    button = buttons['Update preview']
+                    button = buttons['Reset to defaults']
                     button.focus_force()
                     root.update()
                     button.event_generate('<Enter>')
@@ -97,7 +97,7 @@ class GuiTests(unittest.TestCase):
                     root.update()
                     self.assertGreater(canvas.yview()[0], 0)
                     previous_view = canvas.yview()
-                    buttons['Update preview'].event_generate('<MouseWheel>', delta=-delta)
+                    buttons['Reset to defaults'].event_generate('<MouseWheel>', delta=-delta)
                     self.assertEqual(canvas.yview(), previous_view)
                     canvas.yview_moveto(0)
                     # Parameter dropdowns also scroll the panel without changing selection.
@@ -132,6 +132,7 @@ class GuiTests(unittest.TestCase):
                     # Verify refined controls appear only for their owning pattern.
                     for pat, label in [('hobnail','Hobnail plateau width (mm)'),
                                        ('wave','Wave lateral meander (mm)'),
+                                       ('horizontalribbing','Groove width (mm)'),
                                        ('graindorge','Grain length / width ratio'),
                                        ('flamme','Flame outward taper (0–1)'),
                                        ('panier','Panier ribbon curvature (0–2)'),
@@ -140,6 +141,7 @@ class GuiTests(unittest.TestCase):
                                        ('brick','Brick width (mm)'),
                                        ('brick','Brick joint width (mm)'),
                                        ('brick','Brick relief style'),
+                                       ('brick','Brick layout'),
                                        ('dimples','Dimple diameter (mm)'),
                                        ('asanoha','Asanoha line width (mm)'),
                                        ('asanoha','Asanoha relief style'),
@@ -153,6 +155,19 @@ class GuiTests(unittest.TestCase):
                     combo.current(list(app.PATTERNS).index('brick'))
                     combo.event_generate('<<ComboboxSelected>>')
                     root.update()
+                    layout = fields['Brick layout'][1]
+                    layout.set('herringbone')
+                    layout.event_generate('<<ComboboxSelected>>')
+                    root.update()
+                    self.assertTrue(fields['Brick row offset (0–1)'][1].instate(['disabled']))
+                    self.assertFalse(any(w.cget('text').startswith('Preview error:')
+                                         for w in widgets if isinstance(w, ttk.Label)))
+                    layout.set('running_bond')
+                    layout.event_generate('<<ComboboxSelected>>')
+                    root.update()
+                    self.assertFalse(fields['Brick row offset (0–1)'][1].instate(['disabled']))
+                    layout.set('herringbone')
+                    layout.event_generate('<<ComboboxSelected>>')
                     fields['Brick width (mm)'][1].delete(0, 'end')
                     fields['Brick width (mm)'][1].insert(0, '2.25')
                     fields['Brick relief style'][1].set('rounded')
@@ -185,9 +200,10 @@ class GuiTests(unittest.TestCase):
                         self.assertEqual(len(match), 1, name)
                         match[0].delete(0, 'end')
                         match[0].insert(0, value)
-                    buttons['Update preview'].invoke()
                     groove = fields['Groove width (mm)'][1]
                     depth = fields['Target depth (mm)'][1]
+                    groove.event_generate('<FocusOut>')
+                    root.update()
                     groove.focus_force()
                     root.update()
                     with patch.object(app, 'render', wraps=app.render) as preview_render:
