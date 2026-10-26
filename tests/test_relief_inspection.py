@@ -5,10 +5,31 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from dial_patterns import render, save_map, _hex_cell_coordinates, _perlage_height
-from inspection import crop_map, relief_mesh
+from inspection import crop_map, relief_mesh, inspection_samples
 
 
 class ReliefInspectionTests(unittest.TestCase):
+    def test_auto_mesh_retains_grooves_missed_by_coarse_sampling(self):
+        source = np.full((801, 801), 65535, dtype=np.uint16)
+        source[:, 311] = 0  # Falls between the old 401-sample mesh columns.
+        coarse = relief_mesh(source, 28.5, .15, max_samples=401)
+        samples = inspection_samples({'pattern': 'isometriccubes', 'cube_gap_mm': .04}, 28.5)
+        detailed = relief_mesh(source, 28.5, .15, max_samples=samples)
+        self.assertEqual(float(coarse.points[:, 2].min()), 0.)
+        self.assertAlmostEqual(float(detailed.points[:, 2].min()), -.15)
+        self.assertEqual(detailed.n_points, source.size)
+        np.testing.assert_allclose(detailed.points[:, 2].reshape(source.shape, order='F'),
+                                   (source.astype(float) / 65535 - 1) * .15)
+
+    def test_auto_mesh_tracks_groove_width_and_bounds_cost(self):
+        cubes = {'pattern': 'isometriccubes', 'cube_gap_mm': .04}
+        self.assertEqual(inspection_samples(cubes, 4), 801)
+        self.assertEqual(inspection_samples(cubes, 28.5), 1601)
+        self.assertEqual(inspection_samples(cubes, 1), 401)
+        self.assertGreater(inspection_samples({'pattern': 'asanoha', 'line_width_mm': .025}, 4),
+                           inspection_samples({'pattern': 'asanoha', 'line_width_mm': .055}, 4))
+        self.assertEqual(inspection_samples({'pattern': 'brick'}, 4), 401)
+
     def test_horizontal_row_seams_converge(self):
         # v=0 used to reset these patterns abruptly. Compare adjacent pixel centers
         # as spacing shrinks; a genuine cliff would retain a nonzero jump.

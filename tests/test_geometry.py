@@ -1,9 +1,33 @@
 """Regression tests for v0.1 geometric controls and validation."""
 import unittest
 import numpy as np
-from dial_patterns import render, PATTERN_FIELDS, FIELD_SPECS
+from PIL import Image
+from dial_patterns import render, render_preview, PATTERN_FIELDS, FIELD_SPECS
 
 class GeometryTests(unittest.TestCase):
+    def test_lattice_previews_preserve_export_appearance(self):
+        for pattern in ('asanoha', 'isometriccubes'):
+            with self.subTest(pattern=pattern):
+                exported, _ = render(pattern=pattern, pixels=2048)
+                reference = Image.fromarray((exported / 257).astype(np.uint8))
+                reference.thumbnail((480, 480), Image.Resampling.LANCZOS)
+                reference = np.asarray(reference, dtype=float)
+                preview, _ = render_preview(pattern=pattern, pixels=2048)
+                coarse, _ = render(pattern=pattern, pixels=480)
+                coarse_error = np.mean(np.abs(coarse / 257 - reference))
+                preview_error = np.mean(np.abs(np.asarray(preview, dtype=float) - reference))
+                self.assertEqual(preview.size, (480, 480))
+                self.assertLess(preview_error, coarse_error * .1)
+
+    def test_preview_respects_small_output_resolution(self):
+        params = dict(pattern='asanoha', pixels=256)
+        original = params.copy()
+        preview, meta = render_preview(**params)
+        output, _ = render(**params)
+        self.assertEqual(params, original)
+        self.assertEqual(meta['pixels'], 256)
+        np.testing.assert_array_equal(np.asarray(preview), (output / 257).astype(np.uint8))
+
     def test_controls_are_registered(self):
         expected = {'hobnail':'top_width_mm','wave':'wave_meander_mm',
                     'annularwave':'ridge_height_fraction','graindorge':'grain_aspect',

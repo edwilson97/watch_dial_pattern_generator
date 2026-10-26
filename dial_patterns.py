@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageTk
 
-__version__ = '1.1.0'
+__version__ = '1.1.1'
 
 PATTERNS = {
     'hobnail': 'Clous de Paris / Hobnail',
@@ -545,6 +545,15 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
     return out, meta
 
 
+def render_preview(**params):
+    """Filter a denser height map so narrow grooves survive the small preview."""
+    params['pixels'] = min(params.get('pixels', 2048), 1920)
+    array, meta = render(**params)
+    image = Image.fromarray((array / 257).astype(np.uint8))
+    image.thumbnail((480, 480), Image.Resampling.LANCZOS)
+    return image, meta
+
+
 def save_map(array, meta, output):
     path = Path(output)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -721,9 +730,16 @@ def run_gui():
     scroll_remainder = 0.0
     windowing_system = root.tk.call('tk', 'windowingsystem')
 
-    def scroll_parameters(event):
+    def scroll_parameters(event, precise=False):
         nonlocal scroll_remainder
-        if getattr(event, 'num', None) in (4, 5):
+        if precise:
+            # Tk 9 packs signed 16-bit X/Y pixel deltas into a single value.
+            # Only the low (vertical) half scrolls this parameter column.
+            delta_y = event.delta & 0xffff
+            if delta_y >= 0x8000:
+                delta_y -= 0x10000
+            movement = -delta_y / int(field_canvas.cget('yscrollincrement'))
+        elif getattr(event, 'num', None) in (4, 5):
             movement = -3 if event.num == 4 else 3
         else:
             # Aqua reports small trackpad deltas; Windows uses 120 per notch.
@@ -741,6 +757,9 @@ def run_gui():
     # panel without changing parameter values. Other GUI areas keep their bindings.
     scroll_tag = 'ParameterScroll:' + str(field_canvas)
     root.bind_class(scroll_tag, '<MouseWheel>', scroll_parameters)
+    if root.tk.call('info', 'commands', 'tk::PreciseScrollDeltas'):
+        root.bind_class(scroll_tag, '<TouchpadScroll>',
+                        lambda event: scroll_parameters(event, precise=True))
     if windowing_system == 'x11':
         root.bind_class(scroll_tag, '<Button-4>', scroll_parameters)
         root.bind_class(scroll_tag, '<Button-5>', scroll_parameters)
@@ -787,7 +806,7 @@ def run_gui():
             field_rows[key].pack(fill='x')
         update_preview()
 
-    def params(preview=False):
+    def params():
         active = set(COMMON_FIELDS + PATTERN_FIELDS[selected_pattern()])
         if circular.get():
             active.add('background')
@@ -800,28 +819,24 @@ def run_gui():
             else:
                 kw[k] = float(values[k].get())
         kw.update(pattern=selected_pattern(), invert=invert.get(), circular=circular.get())
-        if preview:
-            kw['pixels'] = min(480, kw['pixels'])
         return kw
 
     def update_preview():
         nonlocal preview_params
         try:
-            current_params = params(preview=True)
-            arr, meta = render(**current_params)
-            im = Image.fromarray((arr / 257).astype(np.uint8))
-            im.thumbnail((480, 480))
+            current_params = params()
+            im, meta = render_preview(**current_params)
             photo = ImageTk.PhotoImage(im)
             preview_label.configure(image=photo)
             right._preview_image = photo
             preview_params = current_params
-            status.set(f"{meta['pattern_name']} | preview {meta['pixels']} px | white = high")
+            status.set(f"{meta['pattern_name']} | preview {im.width} px | white = high")
         except Exception as e:
             status.set('Preview error: ' + str(e))
 
     def preview_on_focus_out(event):
         try:
-            if params(preview=True) == preview_params and not status.get().startswith('Preview error:'):
+            if params() == preview_params and not status.get().startswith('Preview error:'):
                 return
         except (ValueError, TypeError):
             pass  # Let update_preview report invalid input and retain the image.

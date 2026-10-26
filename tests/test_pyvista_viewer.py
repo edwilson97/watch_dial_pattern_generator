@@ -22,6 +22,25 @@ def camera_values(plotter):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_live_timer_has_initialized_native_window(self):
+        # Model Win32: a timer permanently captures the window at creation.
+        interactor = Mock(initialized=False)
+        def initialize():
+            interactor.initialized = True
+        def create_timer(duration):
+            self.assertTrue(interactor.initialized,
+                            'Timer created before the native window exists')
+        interactor.initialize.side_effect = initialize
+        interactor.create_timer.side_effect = create_timer
+        viewer = ReliefViewer.__new__(ReliefViewer)
+        viewer.plotter = Mock(iren=interactor)
+        reader = Mock()
+        ReliefViewer.watch_source(viewer, reader)
+        interactor.create_timer.assert_called_once_with(150)
+        # An already initialized window should not be initialized again.
+        ReliefViewer.watch_source(viewer, reader)
+        interactor.initialize.assert_called_once_with()
+
     def test_rapid_edits_coalesce_and_stale_renders_are_discarded(self):
         class Parent:
             def __init__(self):
@@ -189,6 +208,24 @@ class ViewerTests(unittest.TestCase):
 
     def tearDown(self):
         self.viewer.plotter.close()
+
+    def test_auto_detail_and_source_resolution_guidance(self):
+        viewer = self.viewer
+        source, meta = render(pattern='isometriccubes', size_mm=4, pixels=1024)
+        viewer.replace_source(source, meta)
+        self.assertIsNone(viewer.settings['samples'])
+        self.assertEqual(viewer.mesh.dimensions[:2], (801, 801))
+        status = viewer.plotter.actors['status'].GetText(3)
+        self.assertNotIn('few source pixels', status)
+        viewer.set_detail('Mesh: Fast (201)')
+        self.assertIn('few mesh samples', viewer.plotter.actors['status'].GetText(3))
+        viewer.set_detail('Mesh: Auto (groove detail)')
+        self.assertEqual(viewer.mesh.dimensions[:2], (801, 801))
+        source, meta = render(pattern='isometriccubes', size_mm=4, pixels=128)
+        viewer.replace_source(source, meta)
+        self.assertIn('few source pixels', viewer.plotter.actors['status'].GetText(3))
+        self.assertEqual(viewer.mesh.dimensions[:2], (128, 128))
+        np.testing.assert_array_equal(viewer.array, source)
 
     def test_real_mouse_navigation_and_preserved_camera(self):
         viewer = self.viewer

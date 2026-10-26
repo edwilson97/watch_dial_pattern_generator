@@ -1,6 +1,6 @@
 # Watch Dial Pattern Generator
 
-Current version: **1.1.0**. See [release notes](RELEASE-NOTES.md) for changes.
+Current version: **1.1.1**. See [release notes](RELEASE-NOTES.md) for changes.
 
 A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 25 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
@@ -257,6 +257,15 @@ The GUI remembers edited pitch values per pattern until **Reset to defaults**.
 The grayscale preview refreshes when you edit a parameter and move focus to another
 field. Pattern, style, and checkbox changes refresh immediately. Invalid entries
 keep the last valid preview visible and show an error in the status text.
+
+The small preview uses a higher-resolution render and filtered reduction to avoid
+false patterns and jagged lattice edges. The 3D viewer starts in **Mesh: Auto
+(groove detail)**, which retains more samples across Asanoha and cube grooves.
+It still uses the exported height-map samples. If the viewer reports too few
+source pixels, increase **Output pixels / side** (try 4096 for a 28.5 mm dial);
+if it reports too few mesh samples, select Auto or reduce the crop width.
+For Asanoha, **engraved** leaves flat interiors between recessed lines, while
+**faceted** and **rounded** add sculpted relief between them.
 
 ## Dimples (golf ball texture)
 
