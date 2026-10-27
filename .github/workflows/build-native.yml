@@ -58,12 +58,51 @@ jobs:
           tests.test_geometry tests.test_distinct_lattices
           tests.test_fishscales_relief tests.test_brick tests.test_dimples
           tests.test_relief_inspection tests.test_packaging -v
+      - name: Prepare isolated Windows viewer Python
+        if: runner.os == 'Windows'
+        id: viewer-python
+        shell: pwsh
+        run: |
+          $viewerRoot = Join-Path $env:RUNNER_TEMP 'windows-viewer-python'
+          $pythonHome = python -c 'import sys; print(sys.base_prefix)'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not locate the Python runtime.' }
+          New-Item -ItemType Directory -Force -Path $viewerRoot | Out-Null
+          # Copy the real interpreter, not a venv redirector that launches the
+          # original executable and would bypass the adjacent Mesa libraries.
+          Copy-Item -LiteralPath (Join-Path $pythonHome 'python.exe') -Destination $viewerRoot
+          Get-ChildItem -LiteralPath $pythonHome -Filter '*.dll' | Copy-Item -Destination $viewerRoot
+          "scripts=$viewerRoot" >> $env:GITHUB_OUTPUT
+          "home=$pythonHome" >> $env:GITHUB_OUTPUT
+      - name: Install software OpenGL for Windows viewer tests
+        if: runner.os == 'Windows'
+        uses: f3d-app/install-mesa-windows-action@b78081f8331c5d49d71b221ca13a25fd97dac165
+        with:
+          version: '23.3.5'
+          path: ${{ steps.viewer-python.outputs.scripts }}
+      - name: Verify Windows native software OpenGL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VTK_DEFAULT_OPENGL_WINDOW: vtkWin32OpenGLRenderWindow
+          PYTHONHOME: ${{ steps.viewer-python.outputs.home }}
+        run: |
+          & '${{ steps.viewer-python.outputs.scripts }}\python.exe' scripts/check_native_opengl.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native software OpenGL initialization failed.' }
       - name: Test Windows live viewer updates
         if: runner.os == 'Windows'
-        run: >-
-          python -m unittest
-          tests.test_pyvista_viewer.UpdateTests
-          tests.test_pyvista_viewer.MeshTests.test_native_viewer_polls_changes_after_startup -v
+        shell: pwsh
+        env:
+          VTK_DEFAULT_OPENGL_WINDOW: vtkWin32OpenGLRenderWindow
+          PYTHONHOME: ${{ steps.viewer-python.outputs.home }}
+        run: |
+          & '${{ steps.viewer-python.outputs.scripts }}\python.exe' -m unittest tests.test_pyvista_viewer.UpdateTests tests.test_pyvista_viewer.MeshTests.test_native_viewer_polls_changes_after_startup -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows live viewer tests failed.' }
+      - name: Clean up Windows viewer graphics environment
+        if: ${{ always() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'windows-viewer-python') -Recurse -Force -ErrorAction SilentlyContinue
+          'GALLIUM_DRIVER=' >> $env:GITHUB_ENV
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
         env:
