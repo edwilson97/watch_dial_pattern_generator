@@ -115,6 +115,9 @@ class MeshTests(unittest.TestCase):
             write_snapshot(source, a, m)
             reader = SnapshotReader(source)
             viewer = ReliefViewer(*reader.read())
+            if sys.platform == 'win32':
+                backend = viewer.plotter.render_window.GetClassName()
+                assert backend == 'vtkWin32OpenGLRenderWindow', backend
             viewer.watch_source(reader)
             viewer.plotter.show(interactive_update=True, auto_close=False)
             a, m = render(pattern='wave', pixels=256)
