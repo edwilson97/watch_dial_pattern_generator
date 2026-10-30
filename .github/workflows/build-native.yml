@@ -65,7 +65,7 @@ jobs:
           python -m unittest
           tests.test_geometry tests.test_distinct_lattices
           tests.test_fishscales_relief tests.test_brick tests.test_dimples tests.test_ingenieur
-          tests.test_relief_inspection tests.test_packaging -v
+          tests.test_exclusion_zones tests.test_relief_inspection tests.test_packaging -v
       - name: Prepare isolated Windows viewer Python
         if: runner.os == 'Windows'
         id: viewer-python

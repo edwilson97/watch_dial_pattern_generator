@@ -1,0 +1,5 @@
+[
+  {"shape": "rectangle", "x_mm": 0, "y_mm": 7, "width_mm": 7, "height_mm": 2, "clearance_mm": 0.2, "feather_mm": 0, "level": 1},
+  {"shape": "rectangle", "x_mm": 9.2, "y_mm": 0, "width_mm": 3, "height_mm": 2.2, "clearance_mm": 0.2, "feather_mm": 0, "level": 1},
+  {"shape": "circle", "x_mm": 0, "y_mm": 0, "width_mm": 1.2, "clearance_mm": 0.15, "feather_mm": 0, "level": 1}
+]
