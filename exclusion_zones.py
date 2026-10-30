@@ -82,11 +82,17 @@ def edit_zones(parent, zones, on_apply):
     ttk.Label(body, text='Reserve flat areas for logos, windows, and markers.',
               font=('TkDefaultFont', 13, 'bold')).pack(anchor='w')
     ttk.Label(body, text='Millimeters from dial center. +X = right; +Y = up.\n'
-              'White (1) = highest surface. Feathering extends outside clearance.').pack(anchor='w', pady=(6, 10))
+              'White (1) = highest surface. Feathering extends outside clearance.\n'
+              'Draw order: first in list = behind; last in list = on top.').pack(anchor='w', pady=(6, 10))
     content = ttk.Frame(body)
     content.pack(fill='both')
-    listing = tk.Listbox(content, width=30, height=13, exportselection=False)
-    listing.pack(side='left', fill='both', padx=(0, 14))
+    list_column = ttk.Frame(content)
+    list_column.pack(side='left', fill='both', padx=(0, 14))
+    listing = tk.Listbox(list_column, width=30, height=13, exportselection=False)
+    listing.pack(fill='both', expand=True)
+    order_controls = ttk.Frame(list_column)
+    order_controls.pack(fill='x', pady=(6, 0))
+    order_buttons = {}
     form = ttk.Frame(content)
     form.pack(side='left', fill='both')
     variables = {key: tk.StringVar(value=str(value)) for key, value in ZONE_DEFAULTS.items()}
@@ -113,15 +119,24 @@ def edit_zones(parent, zones, on_apply):
 
     variables['shape'].trace_add('write', shape_changed)
 
+    def update_order_buttons():
+        selection = listing.curselection()
+        for delta, button in order_buttons.items():
+            can_move = bool(selection) and 0 <= selection[0] + delta < len(working)
+            button.state(['!disabled'] if can_move else ['disabled'])
+
     def refresh(selection=None):
         listing.delete(0, 'end')
         for index, zone in enumerate(working, 1):
             listing.insert('end', f"{index}. {zone['shape']} ({zone['x_mm']:g}, {zone['y_mm']:g})")
         if selection is not None:
             listing.selection_set(selection)
+            listing.activate(selection)
             listing.see(selection)
+        update_order_buttons()
 
     def select(event=None):
+        update_order_buttons()
         if listing.curselection():
             for key, value in working[listing.curselection()[0]].items():
                 variables[key].set(str(value))
@@ -155,9 +170,30 @@ def edit_zones(parent, zones, on_apply):
             refresh()
             error.set('Zone removed. Choose Apply to dial to preview the change.')
 
+    def move(delta):
+        selection = listing.curselection()
+        if not selection:
+            return
+        index = selection[0]
+        target = index + delta
+        if not 0 <= target < len(working):
+            return
+        working[index], working[target] = working[target], working[index]
+        refresh(target)
+        error.set('Draw order changed. Choose Apply to dial to preview it.')
+
     def apply():
         on_apply(validate_zones(working))
         error.set(f'Applied {len(working)} exclusion zone(s) to the dial.')
+
+    for delta, label, help_text in (
+        (-1, 'Move up', 'Draw the selected zone earlier, behind zones later in the list. Apply to dial to preview.'),
+        (1, 'Move down', 'Draw the selected zone later, on top of zones earlier in the list. Apply to dial to preview.'),
+    ):
+        button = ttk.Button(order_controls, text=label, command=lambda step=delta: move(step))
+        button.pack(side='left', expand=True, fill='x')
+        add_tooltip(button, help_text)
+        order_buttons[delta] = button
 
     actions = ttk.Frame(body)
     actions.pack(fill='x', pady=(10, 0))

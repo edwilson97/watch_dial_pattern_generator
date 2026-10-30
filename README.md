@@ -182,8 +182,10 @@ leaving the entire reserved footprint flat. Set feather to zero for a sharp edge
 **Flat surface level** defaults to 1 (white / highest); it stays fixed when the
 pattern is inverted. Pattern rotation and offset do not move the zones.
 
-Multiple zones are supported; later zones take precedence in overlaps. Applied
-zones affect the grayscale preview, live 3D inspection, both PNG exports, and JSON
+Multiple zones are supported; later zones take precedence in overlaps. Select a
+zone and use **Move up** to draw it earlier (behind), or **Move down** to draw it
+later (on top), then **Apply to dial**. The selection follows the moved zone.
+Applied zones affect the grayscale preview, live 3D inspection, both PNG exports, and JSON
 settings. These are flat height-map areas, not actual holes or a separate laser
 exclusion mask. This first version clips relief at the boundary; it does not omit
 whole motifs or bend the pattern around the zone.

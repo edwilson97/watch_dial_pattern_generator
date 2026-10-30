@@ -25,6 +25,8 @@ class GuiTests(unittest.TestCase):
             root.update()
             editor = next(w for w in root.winfo_children() if isinstance(w, tk.Toplevel))
             controls = {w.cget('text'): w for w in descendants(editor) if isinstance(w, ttk.Button)}
+            self.assertTrue(controls['Move up'].instate(['disabled']))
+            self.assertTrue(controls['Move down'].instate(['disabled']))
             fields = {}
             for w in descendants(editor):
                 if isinstance(w, (ttk.Entry, ttk.Combobox)):
@@ -53,10 +55,47 @@ class GuiTests(unittest.TestCase):
             zone = preview.call_args.kwargs['exclusion_zones'][0]
             self.assertEqual(zone['shape'], 'circle')
             self.assertEqual(zone['width_mm'], 3)
+            self.assertTrue(controls['Move up'].instate(['disabled']))
+            self.assertTrue(controls['Move down'].instate(['disabled']))
+            # Two overlapping zones at different levels visibly swap precedence.
+            fields['Shape'].set('rectangle')
+            fields['Width / circle diameter (mm)'].delete(0, 'end')
+            fields['Width / circle diameter (mm)'].insert(0, '6')
+            fields['Flat surface level (0–1)'].delete(0, 'end')
+            fields['Flat surface level (0–1)'].insert(0, '.25')
+            controls['Add'].invoke()
+            controls['Apply to dial'].invoke()
+            array, _ = app.render(**dict(preview.call_args.kwargs, pixels=128))
+            self.assertEqual(array[32, 64], round(.25 * 65535))
+            self.assertFalse(controls['Move up'].instate(['disabled']))
+            self.assertTrue(controls['Move down'].instate(['disabled']))
+            controls['Move up'].invoke()
+            # Reordering remains staged until Apply to dial.
+            self.assertEqual(preview.call_args.kwargs['exclusion_zones'][0], zone)
+            controls['Apply to dial'].invoke()
+            array, _ = app.render(**dict(preview.call_args.kwargs, pixels=128))
+            self.assertEqual(array[32, 64], 65535)
+            self.assertEqual(preview.call_args.kwargs['exclusion_zones'][1], zone)
+            listing = next(w for w in descendants(editor) if isinstance(w, tk.Listbox))
+            self.assertEqual(listing.curselection(), (0,))
+            self.assertTrue(controls['Move up'].instate(['disabled']))
+            self.assertFalse(controls['Move down'].instate(['disabled']))
+            controls['Move up'].invoke()  # Cannot move past the first position.
+            self.assertEqual(listing.curselection(), (0,))
+            controls['Move down'].invoke()
+            controls['Apply to dial'].invoke()
+            array, _ = app.render(**dict(preview.call_args.kwargs, pixels=128))
+            self.assertEqual(array[32, 64], round(.25 * 65535))
+            self.assertEqual(listing.curselection(), (1,))
+            controls['Move down'].invoke()  # Cannot move past the last position.
+            self.assertEqual(listing.curselection(), (1,))
+            controls['Move up'].invoke()
+            controls['Apply to dial'].invoke()
+            ordered_zones = preview.call_args.kwargs['exclusion_zones']
             controls['Close'].invoke()
             with patch('inspection.open_inspection') as launch:
                 buttons['Inspect enlarged / 3D'].invoke()
-                self.assertEqual(launch.call_args.args[2]['exclusion_zones'][0], zone)
+                self.assertEqual(launch.call_args.args[2]['exclusion_zones'], ordered_zones)
                 launch.call_args.kwargs['on_ready']()
             with tempfile.TemporaryDirectory() as directory:
                 target = Path(directory) / 'zones.png'
@@ -65,15 +104,21 @@ class GuiTests(unittest.TestCase):
                     buttons['Export PNG + settings'].invoke()
                 import json
                 meta = json.loads(target.with_suffix('.json').read_text())
-                self.assertEqual(meta['exclusion_zones'][0], zone)
+                self.assertEqual(meta['exclusion_zones'], ordered_zones)
             # Reopen, remove, and apply; closing an unapplied edit discards it.
             buttons['Exclusion zones (0)…'].invoke()
             root.update()
             editor = next(w for w in root.winfo_children() if isinstance(w, tk.Toplevel))
             controls = {w.cget('text'): w for w in descendants(editor) if isinstance(w, ttk.Button)}
             controls['Remove selected'].invoke()
+            listing = next(w for w in descendants(editor) if isinstance(w, tk.Listbox))
+            listing.selection_set(0)
+            listing.event_generate('<<ListboxSelect>>')
+            controls['Remove selected'].invoke()
             controls['Apply to dial'].invoke()
             self.assertEqual(preview.call_args.kwargs['exclusion_zones'], [])
+            self.assertTrue(controls['Move up'].instate(['disabled']))
+            self.assertTrue(controls['Move down'].instate(['disabled']))
             controls['Add'].invoke()
             controls['Close'].invoke()
             self.assertEqual(preview.call_args.kwargs['exclusion_zones'], [])
