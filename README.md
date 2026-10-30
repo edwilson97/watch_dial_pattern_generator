@@ -165,6 +165,43 @@ if it reports too few mesh samples, select Auto or reduce the crop width.
 For Asanoha, **engraved** leaves flat interiors between recessed lines, while
 **faceted** and **rounded** add sculpted relief between them.
 
+## Exclusion zones (experimental)
+
+Open **Exclusion zones (0)…** to reserve flat areas for a logo, date window,
+center hole footprint, or hour markers. Choose a rectangle or circle, enter its
+dimensions and center, then **Add → Apply to dial**. To edit an existing zone,
+select it, change its fields, and choose **Update selected → Apply to dial**.
+Closing the editor discards changes that have not been applied. Remove a zone
+with **Remove selected → Apply to dial**; **Reset to defaults** clears all zones.
+
+Positions are in millimeters from dial center: positive X goes right and positive
+Y goes up. Width is the diameter for circles; rectangle height is ignored for
+circles. **Clearance** adds space around the footprint (with rounded corners on
+rectangles). **Edge feather** blends back into the pattern outside the clearance,
+leaving the entire reserved footprint flat. Set feather to zero for a sharp edge.
+**Flat surface level** defaults to 1 (white / highest); it stays fixed when the
+pattern is inverted. Pattern rotation and offset do not move the zones.
+
+Multiple zones are supported; later zones take precedence in overlaps. Applied
+zones affect the grayscale preview, live 3D inspection, both PNG exports, and JSON
+settings. These are flat height-map areas, not actual holes or a separate laser
+exclusion mask. This first version clips relief at the boundary; it does not omit
+whole motifs or bend the pattern around the zone.
+
+![Original, sharp exclusions, and feathered exclusions](images/exclusion_zones_preview.png)
+
+For the CLI, pass a JSON list of zone objects:
+
+```bash
+python3 dial_patterns.py --cli --pattern ingenieur --circular --exclusion-zones-file examples/exclusion_zones.json --output dial_with_zones.png
+```
+
+See [example zone settings](examples/exclusion_zones.json). Available fields are
+`shape` (`rectangle` or `circle`), `x_mm`, `y_mm`, `width_mm`, `height_mm`,
+`clearance_mm`, `feather_mm`, and `level`. The export JSON includes the normalized
+list under `exclusion_zones`. Rebuild the comparison image with
+`python3 scripts/render_exclusion_demo.py`.
+
 ## Interpretation and limitations
 
 - **White = highest surface; black = deepest recess.** Exported 16-bit PNG contains uint16 grayscale values. The 8-bit PNG is for easier software compatibility.

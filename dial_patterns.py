@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageTk
+from exclusion_zones import apply_zones, validate_zones
 
 __version__ = '1.2.0'
 
@@ -347,13 +348,14 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
            brick_joint_mm=0.10, brick_bevel_mm=0.08, brick_row_offset=0.50, brick_style='faceted',
            perlage_ring_pitch_mm=0.1, perlage_overlap=0.5, dimple_diameter_mm=0.65,
            brick_layout='running_bond', ingenieur_count=3, ingenieur_gap_mm=0.06,
-           ingenieur_feature_width_mm=0.10):
+           ingenieur_feature_width_mm=0.10, exclusion_zones=None):
     """Return uint16 height map and metadata. White = high, black = low.
 
     depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
     """
     if pattern not in PATTERNS:
         raise ValueError('Unknown pattern: ' + pattern)
+    exclusion_zones = validate_zones(exclusion_zones)
     if pitch_mm is None:
         pitch_mm = default_pitch(pattern)
     if not 128 <= pixels <= 8192:
@@ -587,6 +589,7 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
     h = np.asarray(h, dtype=np.float32)
     if invert:
         h = 1 - h
+    h = apply_zones(h, x, y, exclusion_zones)
     if circular:
         h = np.where(rr <= size_mm / 2, h, np.clip(background, 0, 1))
     out = np.uint16(np.round(np.clip(h, 0, 1) * 65535))
@@ -609,6 +612,7 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
                 perlage_overlap=perlage_overlap, dimple_diameter_mm=dimple_diameter_mm,
                 ingenieur_count=ingenieur_count, ingenieur_gap_mm=ingenieur_gap_mm,
                 ingenieur_feature_width_mm=ingenieur_feature_width_mm,
+                exclusion_zones=exclusion_zones,
                 grayscale='white=highest; black=deepest',
                 pixel_pitch_mm=size_mm/pixels,
                 note='Depth is design metadata; calibrate laser material removal experimentally.')
@@ -872,6 +876,7 @@ def run_gui():
     pitch_values = {}
     pitch_pattern = None
     preview_params = None
+    exclusion_zones = []
 
     def selected_pattern():
         return list(PATTERNS)[pattern_combo.current()]
@@ -906,6 +911,7 @@ def run_gui():
             else:
                 kw[k] = float(values[k].get())
         kw.update(pattern=selected_pattern(), invert=invert.get(), circular=circular.get())
+        kw['exclusion_zones'] = [dict(zone) for zone in exclusion_zones]
         return kw
 
     def update_preview():
@@ -920,7 +926,8 @@ def run_gui():
             preview_label.configure(image=photo)
             right._preview_image = photo
             preview_params = current_params
-            status.set(f"{meta['pattern_name']} | preview {im.width} px | white = high")
+            status.set(f"{meta['pattern_name']} | preview {im.width} px | white = high"
+                       + (f" | {len(exclusion_zones)} exclusion zone(s)" if exclusion_zones else ''))
         except Exception as e:
             status.set('Preview error: ' + str(e))
 
@@ -952,6 +959,8 @@ def run_gui():
 
     def reset_all():
         nonlocal pitch_pattern
+        exclusion_zones.clear()
+        zones_button.configure(text='Exclusion zones (0)…')
         # Reset hidden fields as well as currently visible fields, then re-render.
         for key, (_, default) in FIELD_SPECS.items():
             values[key].set(default)
@@ -992,6 +1001,20 @@ def run_gui():
             finish_launch()
             messagebox.showerror('Inspection failed', str(e))
 
+    def edit_exclusions():
+        from exclusion_zones import edit_zones
+
+        def apply(zones):
+            exclusion_zones[:] = zones
+            zones_button.configure(text=f'Exclusion zones ({len(zones)})…')
+            update_preview()
+            inspection_updates.schedule()
+
+        edit_zones(root, exclusion_zones, apply)
+
+    zones_button = ttk.Button(left, text='Exclusion zones (0)…', command=edit_exclusions)
+    add_tooltip(zones_button,
+                'Reserve circular or rectangular flat areas for logos, date windows, and markers. Add clearance or soften the boundary.').pack(fill='x', pady=(8, 0))
     inspect_button = ttk.Button(left, text='Inspect enlarged / 3D', command=inspect_relief)
     add_tooltip(inspect_button,
                 'Open a larger view to zoom in and explore the surface in 3D. It updates as you change settings.').pack(fill='x', pady=(12, 5))
@@ -1012,6 +1035,8 @@ def run_gui():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--exclusion-zones-file', metavar='JSON',
+                        help='JSON file containing a list of circle / rectangle exclusion zones in mm')
     parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     parser.add_argument('--gui', action='store_true', help='Launch Tkinter interface (default without args)')
     parser.add_argument('--cli', action='store_true', help='Generate using command-line arguments')
@@ -1074,6 +1099,12 @@ def main():
     options.pop('gui')
     options.pop('cli')
     output = options.pop('output')
+    zones_file = options.pop('exclusion_zones_file')
+    if zones_file:
+        try:
+            options['exclusion_zones'] = validate_zones(json.loads(Path(zones_file).read_text(encoding='utf-8')))
+        except (OSError, ValueError) as exc:
+            parser.error('Cannot load exclusion zones: ' + str(exc))
     array, meta = render(**options)
     save_map(array, meta, output)
     print('Saved:', output, '| 8-bit copy and JSON metadata saved alongside')
