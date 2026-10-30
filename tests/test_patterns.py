@@ -26,7 +26,7 @@ def main():
     for i,(key,im) in enumerate(thumbs):
         x=i%4*256;y=i//4*290
         sheet.paste(im.resize((246,246)),(x+5,y+5))
-        draw.text((x+8,y+255),key,fill='black')
+        draw.text((x+8,y+255),PATTERNS[key] if key == 'ingenieur' else key,fill='black')
     catalog = Path(__file__).resolve().parent.parent/'images'/'pattern_catalog.png'
     catalog.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(catalog)

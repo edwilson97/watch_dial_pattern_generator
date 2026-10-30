@@ -41,6 +41,7 @@ PATTERNS = {
     'asanoha': 'Asanoha (hemp leaf geometry)',
     'brick': 'Brick / Running Bond / Herringbone',
     'dimples': 'Dimples (golf ball texture)',
+    'ingenieur': 'Ribs & Posts',
 
 }
 
@@ -95,6 +96,26 @@ def _dimple_height(u, v, pitch_mm, diameter_mm):
     radius = diameter_mm / (2 * pitch_mm)
     radial = np.clip(np.hypot(xx, yy) / radius, 0, 1)
     return (1 - np.sqrt(1 - .64 * radial**2)) / .4
+
+
+def _ingenieur_height(u, v, pitch_mm, count, gap_mm, feature_width_mm):
+    """Checkerboard of horizontal ribs and count-by-count circular posts.
+
+    Pitch is one square's width. Both motifs share flat tops and short bevels;
+    their heights describe physical relief, without baked-in illumination.
+    """
+    fu, fv = np.mod(u, 1.), np.mod(v, 1.)
+    margin = gap_mm / (2 * pitch_mm)
+    spacing = (1 - 2 * margin) / count
+    # Each subcell has a feature centered halfway through it.
+    dx = np.mod(fu - margin, spacing) - spacing / 2
+    dy = np.mod(fv - margin, spacing) - spacing / 2
+    radius = feature_width_mm / (2 * pitch_mm)
+    edge = np.minimum(np.minimum(fu, 1 - fu), np.minimum(fv, 1 - fv)) - margin
+    ribs = np.minimum(radius - np.abs(dy), edge)
+    posts = np.minimum(radius - np.hypot(dx, dy), edge)
+    rib_square = (np.floor(u).astype(np.int32) + np.floor(v).astype(np.int32)) % 2 == 0
+    return np.clip(np.where(rib_square, ribs, posts) / (radius * .3), 0, 1)
 
 
 def _hex_vertices():
@@ -308,7 +329,7 @@ def _brick_height(u_mm, v_mm, width_mm, height_mm, joint_mm, bevel_mm, stagger, 
     raise ValueError('Unknown brick style')
 
 
-PATTERN_PITCH_DEFAULTS = {'hobnail': 1.0}
+PATTERN_PITCH_DEFAULTS = {'hobnail': 1.0, 'ingenieur': 2.0}
 
 
 def default_pitch(pattern):
@@ -325,7 +346,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
            line_width_mm=0.055, cube_gap_mm=0.04, cube_step_fraction=0.28, asanoha_style='faceted', fishscales_style='rounded', brick_width_mm=1.20, brick_height_mm=0.60,
            brick_joint_mm=0.10, brick_bevel_mm=0.08, brick_row_offset=0.50, brick_style='faceted',
            perlage_ring_pitch_mm=0.1, perlage_overlap=0.5, dimple_diameter_mm=0.65,
-           brick_layout='running_bond'):
+           brick_layout='running_bond', ingenieur_count=3, ingenieur_gap_mm=0.06,
+           ingenieur_feature_width_mm=0.10):
     """Return uint16 height map and metadata. White = high, black = low.
 
     depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
@@ -384,6 +406,13 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
     if pattern == 'dimples':
         if not math.isfinite(pitch_mm) or not 0 < dimple_diameter_mm <= pitch_mm:
             raise ValueError('Dimple diameter must be positive and no larger than the pattern pitch')
+    if pattern == 'ingenieur':
+        if not math.isfinite(pitch_mm) or not 0 <= ingenieur_gap_mm < pitch_mm:
+            raise ValueError('Grid square gap must be nonnegative and smaller than pitch')
+        if not math.isfinite(ingenieur_count) or not 1 <= ingenieur_count <= 12 or int(ingenieur_count) != ingenieur_count:
+            raise ValueError('Grid feature count must be a whole number from 1 to 12')
+        if not 0 < ingenieur_feature_width_mm < (pitch_mm - ingenieur_gap_mm) / ingenieur_count:
+            raise ValueError('Grid rib/post width must be positive and smaller than (pitch - gap) / count')
     if perlage_ring_pitch_mm <= 0 or not 0 <= perlage_overlap <= .5:
         raise ValueError('Perlage ring pitch must be positive; overlap must be 0–0.5')
     # Pixel-center coordinates; no illumination, only geometry.
@@ -399,7 +428,10 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
     rr = np.sqrt(x*x + y*y)
     theta = np.arctan2(y, x)
 
-    if pattern == 'dimples':
+    if pattern == 'ingenieur':
+        h = _ingenieur_height(u + phase, v + phase, pitch_mm, ingenieur_count,
+                              ingenieur_gap_mm, ingenieur_feature_width_mm)
+    elif pattern == 'dimples':
         h = _dimple_height(u + phase, v + phase, pitch_mm, dimple_diameter_mm)
     elif pattern == 'brick':
         h = _brick_height(u * pitch_mm + phase * brick_width_mm,
@@ -575,6 +607,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
                 brick_style=brick_style, brick_layout=brick_layout,
                 perlage_ring_pitch_mm=perlage_ring_pitch_mm,
                 perlage_overlap=perlage_overlap, dimple_diameter_mm=dimple_diameter_mm,
+                ingenieur_count=ingenieur_count, ingenieur_gap_mm=ingenieur_gap_mm,
+                ingenieur_feature_width_mm=ingenieur_feature_width_mm,
                 grayscale='white=highest; black=deepest',
                 pixel_pitch_mm=size_mm/pixels,
                 note='Depth is design metadata; calibrate laser material removal experimentally.')
@@ -628,6 +662,7 @@ PATTERN_FIELDS = {
     'asanoha': ('pitch_mm', 'rotation', 'phase', 'line_width_mm', 'asanoha_style'),
     'brick': ('brick_layout', 'brick_width_mm', 'brick_height_mm', 'brick_joint_mm', 'brick_bevel_mm', 'brick_row_offset', 'brick_style', 'rotation', 'phase'),
     'dimples': ('pitch_mm', 'dimple_diameter_mm', 'rotation', 'phase'),
+    'ingenieur': ('pitch_mm', 'ingenieur_count', 'ingenieur_gap_mm', 'ingenieur_feature_width_mm', 'rotation', 'phase'),
 
 }
 FIELD_SPECS = {
@@ -668,10 +703,16 @@ FIELD_SPECS = {
     'brick_style': ('Brick relief style', 'faceted'),
     'brick_layout': ('Brick layout', 'running_bond'),
     'dimple_diameter_mm': ('Dimple diameter (mm)', '0.65'),
+    'ingenieur_count': ('Grid ribs / posts per row', '3'),
+    'ingenieur_gap_mm': ('Grid square gap (mm)', '0.06'),
+    'ingenieur_feature_width_mm': ('Grid rib / post width (mm)', '0.10'),
 }
 
 
 FIELD_TOOLTIPS = {
+    'ingenieur_count': 'Enter a whole number from 1 to 12. Alternating squares contain this many horizontal ribs or this many rows and columns of circular posts.',
+    'ingenieur_gap_mm': 'Enter the recessed gap between checkerboard squares in millimeters, from 0 to less than Pattern pitch. Pitch is the width of one square; the full checkerboard repeats every two squares.',
+    'ingenieur_feature_width_mm': 'Enter the rib width and circular post diameter in millimeters, greater than 0 and less than (pitch minus square gap) divided by feature count. Tops are flat with short beveled edges.',
     'size_mm': 'Enter the width of the square design area in millimeters. With a circular mask, this is the circle diameter.',
     'pixels': 'Enter a whole number from 128 to 8192 for each side of the saved image. More pixels preserve finer details but take longer.',
     'depth_mm': 'Enter the intended surface depth in millimeters, greater than 0. Used for the 3D view and saved settings; actual engraving depth depends on your laser setup.',
@@ -860,7 +901,7 @@ def run_gui():
         for k in active:
             if k in ENUM_FIELDS:
                 kw[k] = values[k].get()
-            elif k in ('pixels', 'grooves', 'segments'):
+            elif k in ('pixels', 'grooves', 'segments', 'ingenieur_count'):
                 kw[k] = int(values[k].get())
             else:
                 kw[k] = float(values[k].get())
@@ -978,7 +1019,7 @@ def main():
     parser.add_argument('--size-mm', type=float, default=28.5)
     parser.add_argument('--pixels', type=int, default=2048)
     parser.add_argument('--pitch-mm', type=float, default=None,
-                        help='Pattern pitch in mm (default: 1.0 for Hobnail, 0.75 otherwise)')
+                        help='Pattern pitch in mm (default: 1.0 for Hobnail, 2.0 for Ribs & Posts, 0.75 otherwise)')
     parser.add_argument('--depth-mm', type=float, default=.15)
     parser.add_argument('--rotation', type=float, default=0)
     parser.add_argument('--phase', type=float, default=0)
@@ -1019,6 +1060,12 @@ def main():
     parser.add_argument('--dimple-diameter-mm', type=float, default=.65,
                         help='Dimple diameter in mm, positive and no larger than pattern pitch')
     parser.add_argument('--output', default='watch_dial_heightmap.png')
+    parser.add_argument('--ingenieur-count', type=int, default=3,
+                        help='Ribs per line square and rows/columns per post square (1–12)')
+    parser.add_argument('--ingenieur-gap-mm', type=float, default=.06,
+                        help='Recessed gap between grid squares; pitch is one square width')
+    parser.add_argument('--ingenieur-feature-width-mm', type=float, default=.10,
+                        help='Rib width and circular post diameter in mm')
     args = parser.parse_args()
     if args.gui or (not args.cli and len(__import__('sys').argv) == 1):
         run_gui()
