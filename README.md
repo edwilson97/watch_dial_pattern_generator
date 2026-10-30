@@ -2,7 +2,7 @@
 
 Current version: **1.2.0**. See [release notes](RELEASE-NOTES.md) for changes.
 
-A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 26 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
+A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 27 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
 ## Donate/Sponsor
 
@@ -130,14 +130,23 @@ For CLI use, replace `python3` in the examples below with
 python3 dial_patterns.py --cli --pattern rosette --pitch-mm 0.75 --grooves 24 --amplitude 0.4 --pixels 2048 --output rosette.png
 python3 dial_patterns.py --cli --pattern tapisserie --pitch-mm 0.75 --groove-width-mm 0.30 --bevel-width-mm 0.08 --output tapisserie.png
 python3 dial_patterns.py --cli --pattern honeycomb --pitch-mm 0.8 --output honeycomb.png
+python3 dial_patterns.py --cli --pattern ingenieur --pitch-mm 2.0 --ingenieur-count 3 --ingenieur-gap-mm 0.06 --ingenieur-feature-width-mm 0.10 --output ingenieur.png
 python3 dial_patterns.py --help
 ```
 
 To see all available options for the CLI, use the `-h` or `--help` command line parameter.
 
-Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, and `dimples`.
+Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, `dimples`, and `ingenieur`.
 
-[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 26 patterns.
+[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 27 patterns.
+
+**Ribs & Posts** (CLI key: `ingenieur`) alternates squares of horizontal raised ribs with squares
+of circular, flat-topped posts. The default is three ribs alternating with a 3×3 post
+array. Pattern pitch defaults to 2 mm and sets one square's width; the full checkerboard repeats every
+two squares. Adjust the feature count (1–12), square gap, rib width/post diameter,
+rotation, and offset. Feature width must be less than `(pitch - gap) / count`.
+Both motifs have short beveled edges and share the same relief height. Use Invert
+to recess the motifs. This is an interpretation of the texture, not an exact replica.
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
@@ -170,11 +179,11 @@ For Asanoha, **engraved** leaves flat interiors between recessed lines, while
 python3 -m tests.test_patterns
 ```
 
-This tests all 26 generators and PNG exports and creates `images/pattern_catalog.png`.
+This tests all 27 generators and PNG exports and creates `images/pattern_catalog.png`.
 
 ## Full test suite (including real Tkinter GUI interaction)
 
-The test runner exercises all 26 mathematical pattern renderers and GUI workflows.
+The test runner exercises all 27 mathematical pattern renderers and GUI workflows.
 It opens a real Tk window, selects every pattern, verifies visible parameter controls,
 updates a preview, invokes the GUI export button, and verifies 8/16-bit PNG and JSON output.
 Native save dialogs and message boxes are mocked to make tests deterministic.

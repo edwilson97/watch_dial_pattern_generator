@@ -1,5 +1,10 @@
 # Release Notes
 
+## Unreleased
+
+- Added Ribs & Posts: a checkerboard alternating horizontal ribs and circular, flat-topped posts with short beveled edges. Square pitch, feature count, square gap, feature width, rotation, and offset are adjustable in the GUI and CLI, with 8/16-bit height maps and JSON settings exports.
+- Expanded the pattern catalog to 27 families and added geometry, validation, and export regressions for the grid pattern.
+
 ## v1.2.0 — Herringbone, horizontal ribbing, and layout improvements
 
 - Added a Herringbone layout to Brick with interlocking perpendicular bricks. Supports existing dimensions, joints, bevels, relief styles, rotation, phase, and CLI/settings exports. Running Bond remains the default; row offset is disabled for Herringbone.
