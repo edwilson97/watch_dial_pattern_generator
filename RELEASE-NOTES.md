@@ -1,7 +1,9 @@
 # Release Notes
 
-## Unreleased
+## v1.3.0 — Exclusion zones and Ribs & Posts
 
+- Added circular and rectangular exclusion zones with adjustable position, dimensions, clearance, flat surface level, and optional feathered edges. Applied zones appear in previews, live 3D inspection, PNG exports, and JSON settings; CLI users can load zones from a JSON file.
+- Added Move up / Move down controls for exclusion-zone stacking. Later zones draw on top of earlier zones where they overlap; Apply to dial previews the reordered list.
 - Added Ribs & Posts: a checkerboard alternating horizontal ribs and circular, flat-topped posts with short beveled edges. Square pitch, feature count, square gap, feature width, rotation, and offset are adjustable in the GUI and CLI, with 8/16-bit height maps and JSON settings exports.
 - Expanded the pattern catalog to 27 families and added geometry, validation, and export regressions for the grid pattern.
 

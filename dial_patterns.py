@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image, ImageTk
 from exclusion_zones import apply_zones, validate_zones
 
-__version__ = '1.2.0'
+__version__ = '1.3.0'
 
 PATTERNS = {
     'hobnail': 'Clous de Paris / Hobnail',

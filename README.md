@@ -1,6 +1,6 @@
 # Watch Dial Pattern Generator
 
-Current version: **1.2.0**. See [release notes](RELEASE-NOTES.md) for changes.
+Current version: **1.3.0**. See [release notes](RELEASE-NOTES.md) for changes.
 
 A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 27 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
