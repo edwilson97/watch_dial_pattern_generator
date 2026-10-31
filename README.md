@@ -17,7 +17,7 @@ Copyright (c) 2026 Bridge Watches LLC. Licensed under the [MIT License](LICENSE)
 ## How-To Video
 I have posted a video to YouTube that walks through how to download the binaries and run the application on your Mac or Windows machine. You can find the video here:
 
-[![Watch the video](https://youtu.be/Aq2NqpONtfs)](https://youtu.be/Aq2NqpONtfs)
+[![Watch the video](https://youtube.com)](https://youtu.be/Aq2NqpONtfs)
 
 ## Standalone Windows and macOS downloads
 
