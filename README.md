@@ -14,6 +14,11 @@ If this app helps with your watchmaking projects, consider supporting its develo
 
 Copyright (c) 2026 Bridge Watches LLC. Licensed under the [MIT License](LICENSE).
 
+## How-To Video
+I have posted a video to YouTube that walks through how to download the binaries and run the application on your Mac or Windows machine. You can find the video here:
+
+[![Watch the video](https://youtu.be/Aq2NqpONtfs)](https://youtu.be/Aq2NqpONtfs)
+
 ## Standalone Windows and macOS downloads
 
 The [Build native apps workflow](https://github.com/edwilson97/watch_dial_pattern_generator/actions/workflows/build-native.yml)
@@ -139,14 +144,6 @@ To see all available options for the CLI, use the `-h` or `--help` command line 
 Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, `dimples`, and `ingenieur`.
 
 [View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 27 patterns.
-
-**Ribs & Posts** (CLI key: `ingenieur`) alternates squares of horizontal raised ribs with squares
-of circular, flat-topped posts. The default is three ribs alternating with a 3×3 post
-array. Pattern pitch defaults to 2 mm and sets one square's width; the full checkerboard repeats every
-two squares. Adjust the feature count (1–12), square gap, rib width/post diameter,
-rotation, and offset. Feature width must be less than `(pitch - gap) / count`.
-Both motifs have short beveled edges and share the same relief height. Use Invert
-to recess the motifs. This is an interpretation of the texture, not an exact replica.
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
