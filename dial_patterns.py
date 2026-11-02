@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image, ImageTk
 from exclusion_zones import apply_zones, validate_zones
 
-__version__ = '1.3.0'
+__version__ = '1.3.1'
 
 PATTERNS = {
     'hobnail': 'Clous de Paris / Hobnail',
@@ -33,6 +33,7 @@ PATTERNS = {
     'moire': 'Moiré (interference waves)',
     'chevron': 'Chevron / Herringbone',
     'rosette': 'Rosette (radial petals)',
+    'spirograph': 'Spirograph',
     'sectorrings': 'Sector Rings (segmented annuli)',
     'honeycomb': 'Honeycomb (hexagonal cells)',
     'perlage': 'Perlage (circular graining)',
@@ -47,6 +48,7 @@ PATTERNS = {
 }
 
 ENUM_FIELDS = {
+    'spirograph_style': ('v_cut', 'rounded'),
     'asanoha_style': ('faceted', 'rounded', 'engraved'),
     'fishscales_style': ('rounded', 'faceted', 'engraved'),
     'brick_style': ('faceted', 'engraved', 'rounded'),
@@ -330,6 +332,59 @@ def _brick_height(u_mm, v_mm, width_mm, height_mm, joint_mm, bevel_mm, stagger, 
     raise ValueError('Unknown brick style')
 
 
+def _spirograph_points(fixed, rolling, offset, diameter_mm, tolerance_mm, rotation=0):
+    """Closed hypotrochoid, sampled to a bounded chord error in millimeters."""
+    a = fixed - rolling
+    d = rolling * offset
+    scale = diameter_mm / (2 * (a + d))
+    frequency = a / rolling
+    # |p''(t)| bounds interpolation error by M * dt**2 / 8.
+    curvature_bound = scale * (a + d * frequency**2)
+    step = min(.1, math.sqrt(8 * tolerance_mm / curvature_bound))
+    period = 2 * math.pi * rolling / math.gcd(fixed, rolling)
+    t = np.linspace(0, period, max(32, math.ceil(period / step)) + 1)
+    x = scale * (a * np.cos(t) + d * np.cos(frequency * t))
+    y = scale * (a * np.sin(t) - d * np.sin(frequency * t))
+    angle = math.radians(rotation)
+    points = np.column_stack((x * math.cos(angle) - y * math.sin(angle),
+                              x * math.sin(angle) + y * math.cos(angle)))
+    points[-1] = points[0]  # Exact closure, including the last groove segment.
+    return points
+
+
+def _spirograph_height(coord, fixed, rolling, offset, diameter_mm, width_mm, rotation,
+                       style='v_cut'):
+    """V-shaped or rounded recessed groove; crossings retain the same depth as single lines.
+
+    Only pixels within each segment's bounding box need distance calculations.
+    This avoids allocating a pixel-by-curve distance matrix at export resolution.
+    """
+    pixel_mm = float(coord[1] - coord[0])
+    half_width = width_mm / 2
+    points = _spirograph_points(fixed, rolling, offset, diameter_mm,
+                                min(pixel_mm / 8, width_mm / 32), rotation)
+    distance = np.full((len(coord), len(coord)), half_width, dtype=np.float32)
+    for (ax, ay), (bx, by) in zip(points[:-1], points[1:]):
+        left, right = np.searchsorted(coord, [min(ax, bx) - half_width,
+                                             max(ax, bx) + half_width], side='left')
+        bottom, top = np.searchsorted(coord, [min(ay, by) - half_width,
+                                             max(ay, by) + half_width], side='left')
+        if left == right or bottom == top:
+            continue
+        if ax == bx and ay == by:
+            # A collapsed straight-line curve can retrace a turning point.
+            local = np.hypot(coord[None, left:right] - ax, coord[bottom:top, None] - ay)
+        else:
+            local = _segment_distance(coord[None, left:right], coord[bottom:top, None],
+                                      ax, ay, bx, by)
+        view = distance[bottom:top, left:right]
+        np.minimum(view, local, out=view)
+    normalized = np.clip(distance / half_width, 0, 1)
+    if style == 'v_cut':
+        return normalized
+    return 1 - np.sqrt(np.maximum(0, 1 - normalized**2))
+
+
 PATTERN_PITCH_DEFAULTS = {'hobnail': 1.0, 'ingenieur': 2.0}
 
 
@@ -348,7 +403,9 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
            brick_joint_mm=0.10, brick_bevel_mm=0.08, brick_row_offset=0.50, brick_style='faceted',
            perlage_ring_pitch_mm=0.1, perlage_overlap=0.5, dimple_diameter_mm=0.65,
            brick_layout='running_bond', ingenieur_count=3, ingenieur_gap_mm=0.06,
-           ingenieur_feature_width_mm=0.10, exclusion_zones=None):
+           ingenieur_feature_width_mm=0.10, exclusion_zones=None,
+           spirograph_fixed_teeth=30, spirograph_rolling_teeth=11,
+           spirograph_pen_offset=1.55, spirograph_diameter_mm=26.0, spirograph_style='v_cut'):
     """Return uint16 height map and metadata. White = high, black = low.
 
     depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
@@ -368,6 +425,22 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
         raise ValueError('secondary pitch must be positive, amplitude 0–2, segments >= 2')
     if grooves < 4:
         raise ValueError('grooves must be >= 4')
+    if pattern == 'spirograph':
+        if spirograph_style not in ENUM_FIELDS['spirograph_style']:
+            raise ValueError('Spirograph style must be v_cut or rounded')
+        for value in (spirograph_fixed_teeth, spirograph_rolling_teeth):
+            if not math.isfinite(value) or int(value) != value or not 1 <= value <= 96:
+                raise ValueError('Spirograph gear counts must be whole numbers from 1 to 96')
+        if not 3 <= spirograph_fixed_teeth or spirograph_rolling_teeth >= spirograph_fixed_teeth:
+            raise ValueError('Spirograph fixed gear must be at least 3 and larger than rolling gear')
+        if not math.isfinite(spirograph_pen_offset) or not 0 <= spirograph_pen_offset <= 2:
+            raise ValueError('Spirograph pen offset must be between 0 and 2')
+        if not math.isfinite(spirograph_diameter_mm) or spirograph_diameter_mm <= 0:
+            raise ValueError('Spirograph diameter must be positive and finite')
+        if not math.isfinite(groove_width_mm) or not 0 < groove_width_mm < spirograph_diameter_mm:
+            raise ValueError('Spirograph groove width must be positive and smaller than its diameter')
+        if not math.isfinite(rotation):
+            raise ValueError('Spirograph rotation must be finite')
     if pattern == 'tapisserie':
         if not 0 <= groove_width_mm < pitch_mm:
             raise ValueError('Tapisserie groove width must be >= 0 and less than pitch')
@@ -545,6 +618,10 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
         row = np.floor(v + phase).astype(np.int32)
         zig = np.abs(frac(u + phase) - .5)
         h = .5 + .5 * np.cos(tau * (v + phase + amplitude * np.where(row % 2 == 0, zig, -zig)))
+    elif pattern == 'spirograph':
+        h = _spirograph_height(coord, int(spirograph_fixed_teeth), int(spirograph_rolling_teeth),
+                               spirograph_pen_offset, spirograph_diameter_mm,
+                               groove_width_mm, rotation, spirograph_style)
     elif pattern == 'rosette':
         petals = np.cos(grooves * theta + tau * phase)
         secondary = np.cos(2 * grooves * theta + tau * phase)
@@ -612,6 +689,11 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
                 perlage_overlap=perlage_overlap, dimple_diameter_mm=dimple_diameter_mm,
                 ingenieur_count=ingenieur_count, ingenieur_gap_mm=ingenieur_gap_mm,
                 ingenieur_feature_width_mm=ingenieur_feature_width_mm,
+                spirograph_fixed_teeth=spirograph_fixed_teeth,
+                spirograph_rolling_teeth=spirograph_rolling_teeth,
+                spirograph_pen_offset=spirograph_pen_offset,
+                spirograph_diameter_mm=spirograph_diameter_mm,
+                spirograph_style=spirograph_style,
                 exclusion_zones=exclusion_zones,
                 grayscale='white=highest; black=deepest',
                 pixel_pitch_mm=size_mm/pixels,
@@ -656,6 +738,9 @@ PATTERN_FIELDS = {
     'escargot': ('pitch_mm', 'grooves', 'phase'),
     'moire': ('pitch_mm', 'secondary_pitch_mm', 'angle_deg', 'phase'),
     'chevron': ('pitch_mm', 'rotation', 'phase', 'amplitude'),
+    'spirograph': ('spirograph_fixed_teeth', 'spirograph_rolling_teeth',
+                   'spirograph_pen_offset', 'spirograph_diameter_mm', 'spirograph_style',
+                   'groove_width_mm', 'rotation'),
     'rosette': ('pitch_mm', 'grooves', 'phase', 'amplitude', 'rosette_harmonics'),
     'sectorrings': ('pitch_mm', 'segments', 'phase'),
     'honeycomb': ('pitch_mm', 'rotation', 'softness'),
@@ -670,6 +755,11 @@ PATTERN_FIELDS = {
 
 }
 FIELD_SPECS = {
+    'spirograph_style': ('Spirograph groove profile', 'v_cut'),
+    'spirograph_fixed_teeth': ('Spirograph fixed gear teeth (3–96)', '30'),
+    'spirograph_rolling_teeth': ('Spirograph rolling gear teeth', '11'),
+    'spirograph_pen_offset': ('Spirograph pen offset / gear radius (0–2)', '1.55'),
+    'spirograph_diameter_mm': ('Spirograph diameter (mm)', '26'),
     'perlage_ring_pitch_mm': ('Perlage ring spacing (mm)', '0.1'),
     'perlage_overlap': ('Perlage overlap (0–0.5)', '0.5'),
     'size_mm': ('Area width (mm)', '28.5'),
@@ -714,6 +804,11 @@ FIELD_SPECS = {
 
 
 FIELD_TOOLTIPS = {
+    'spirograph_style': 'Choose v_cut for straight sloping walls meeting at a sharp valley, or rounded for a curved bowl. Gray values encode intermediate heights. Increase Groove width to spread the slopes over more of the dial; Target depth sets their vertical range.',
+    'spirograph_fixed_teeth': 'Enter a whole number from 3 to 96 for the fixed outer gear. Together with the rolling gear count, this sets the number and repetition of loops.',
+    'spirograph_rolling_teeth': 'Enter a whole number greater than 0 and smaller than the fixed gear count. The inner gear rolls inside the fixed gear; the curve always completes a closed cycle.',
+    'spirograph_pen_offset': 'Set pen distance from the rolling gear center as a multiple of its radius. Use 0 for a circle, less than 1 for rounded lobes, 1 for pointed cusps, or above 1 for crossing loops.',
+    'spirograph_diameter_mm': 'Set the outer diameter of the curve centerline in millimeters. Allow another groove width for the full design to fit in the area. Larger designs are cropped to the output area.',
     'ingenieur_count': 'Enter a whole number from 1 to 12. Alternating squares contain this many horizontal ribs or this many rows and columns of circular posts.',
     'ingenieur_gap_mm': 'Enter the recessed gap between checkerboard squares in millimeters, from 0 to less than Pattern pitch. Pitch is the width of one square; the full checkerboard repeats every two squares.',
     'ingenieur_feature_width_mm': 'Enter the rib width and circular post diameter in millimeters, greater than 0 and less than (pitch minus square gap) divided by feature count. Tops are flat with short beveled edges.',
@@ -725,7 +820,7 @@ FIELD_TOOLTIPS = {
     'phase': 'Shift where the pattern starts. Enter a number in pattern repeats; try 0.5 for a half-repeat shift.',
     'softness': 'Enter 0 to 1 to adjust the pattern shape. Higher values soften relief or add waviness, depending on the pattern.',
     'grooves': 'Enter a whole number of radial grooves or repeating features around the center, at least 4.',
-    'groove_width_mm': 'Enter recessed channel width in millimeters, smaller than pattern pitch. For Tapisserie, channels separate squares and 0 is allowed. For Horizontal Ribbing, use greater than 0; rib width equals pitch minus groove width, with vertical sides.',
+    'groove_width_mm': 'Enter recessed channel width in millimeters. For Spirograph, use greater than 0 and smaller than its diameter. For lattice patterns, use smaller than pattern pitch. For Tapisserie, channels separate squares and 0 is allowed. For Horizontal Ribbing, use greater than 0; rib width equals pitch minus groove width, with vertical sides.',
     'bevel_width_mm': 'Enter the width of each sloped square edge in millimeters. Use 0 for sharp edges; slopes must fit within half the raised square width.',
     'background': 'Set the height outside the circle: 0 is deepest (black), 1 is highest (white), and values between give intermediate heights.',
     'top_width_mm': 'Enter the flat top width of each hobnail in millimeters. Use 0 for pointed tops, or a value smaller than the pattern pitch.',
@@ -906,7 +1001,8 @@ def run_gui():
         for k in active:
             if k in ENUM_FIELDS:
                 kw[k] = values[k].get()
-            elif k in ('pixels', 'grooves', 'segments', 'ingenieur_count'):
+            elif k in ('pixels', 'grooves', 'segments', 'ingenieur_count',
+                        'spirograph_fixed_teeth', 'spirograph_rolling_teeth'):
                 kw[k] = int(values[k].get())
             else:
                 kw[k] = float(values[k].get())
@@ -1054,7 +1150,7 @@ def main():
     parser.add_argument('--circular', action='store_true')
     parser.add_argument('--background', type=float, default=0)
     parser.add_argument('--groove-width-mm', type=float, default=0.20,
-                        help='Recessed channel width for Tapisserie or Horizontal Ribbing')
+                        help='Recessed channel width for Tapisserie, Horizontal Ribbing, or Spirograph')
     parser.add_argument('--bevel-width-mm', type=float, default=0.08, help='Tapisserie slope width on each square edge')
     parser.add_argument('--top-width-mm', type=float, default=0)
     parser.add_argument('--wave-meander-mm', type=float, default=0)
@@ -1063,6 +1159,12 @@ def main():
     parser.add_argument('--flame-taper', type=float, default=.5)
     parser.add_argument('--ribbon-curvature', type=float, default=.35)
     parser.add_argument('--rosette-harmonics', type=float, default=0)
+    parser.add_argument('--spirograph-style', choices=ENUM_FIELDS['spirograph_style'], default='v_cut',
+                        help='Groove cross-section: straight V-shaped slopes (default) or rounded bowl')
+    parser.add_argument('--spirograph-fixed-teeth', type=int, default=30, help='Fixed outer gear teeth (3–96)')
+    parser.add_argument('--spirograph-rolling-teeth', type=int, default=11, help='Inner gear teeth, smaller than fixed gear')
+    parser.add_argument('--spirograph-pen-offset', type=float, default=1.55, help='Pen distance / inner gear radius (0–2; above 1 gives loops)')
+    parser.add_argument('--spirograph-diameter-mm', type=float, default=26, help='Outer curve centerline diameter in mm')
     parser.add_argument('--amplitude', type=float, default=.35)
     parser.add_argument('--secondary-pitch-mm', type=float, default=1.2)
     parser.add_argument('--angle-deg', type=float, default=60)

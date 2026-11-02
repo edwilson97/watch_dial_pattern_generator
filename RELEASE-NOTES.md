@@ -1,5 +1,11 @@
 # Release Notes
 
+## v1.3.1 — Spirograph
+
+- Added Spirograph: a closed, looping hypotrochoid with adjustable fixed and rolling gear counts, pen offset, diameter, groove width, and rotation. Available in the GUI, CLI, live 3D inspection, and PNG/settings exports.
+- Added a default V-cut groove profile with straight slopes from the valley to the surface, encoded as grayscale height values. The rounded profile remains selectable; wider grooves make the sloped walls more visible in previews.
+- Expanded the pattern catalog to 28 families and added geometry, groove-profile, validation, export, and GUI regressions for Spirograph.
+
 ## v1.3.0 — Exclusion zones and Ribs & Posts
 
 - Added circular and rectangular exclusion zones with adjustable position, dimensions, clearance, flat surface level, and optional feathered edges. Applied zones appear in previews, live 3D inspection, PNG exports, and JSON settings; CLI users can load zones from a JSON file.
