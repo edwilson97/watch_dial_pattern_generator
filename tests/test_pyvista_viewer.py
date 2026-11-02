@@ -107,6 +107,10 @@ class MeshTests(unittest.TestCase):
     def test_native_viewer_polls_changes_after_startup(self):
         script = textwrap.dedent('''
             import sys, time
+            started = time.monotonic()
+            def progress(stage):
+                print(f'{time.monotonic() - started:.2f}s: {stage}', flush=True)
+            progress('Importing viewer dependencies')
             from pathlib import Path
             from dial_patterns import render
             from inspection import ReliefViewer, SnapshotReader, write_snapshot
@@ -114,25 +118,46 @@ class MeshTests(unittest.TestCase):
             a, m = render(pattern='brick', pixels=128)
             write_snapshot(source, a, m)
             reader = SnapshotReader(source)
+            progress('Creating native viewer')
             viewer = ReliefViewer(*reader.read())
-            if sys.platform == 'win32':
-                backend = viewer.plotter.render_window.GetClassName()
-                assert backend == 'vtkWin32OpenGLRenderWindow', backend
-            viewer.watch_source(reader)
-            viewer.plotter.show(interactive_update=True, auto_close=False)
-            a, m = render(pattern='wave', pixels=256)
-            write_snapshot(source, a, m)
-            deadline = time.monotonic() + 5
-            while viewer.meta['pattern'] != 'wave' and time.monotonic() < deadline:
-                viewer.plotter.update()
-                time.sleep(.01)
-            assert viewer.meta['pattern'] == 'wave', 'Native update timer did not fire'
-            viewer.plotter.close()
+            try:
+                # Exercise native rendering and timers without a full-size
+                # desktop framebuffer on CI's software OpenGL renderer.
+                viewer.plotter.window_size = (640, 480)
+                if sys.platform == 'win32':
+                    backend = viewer.plotter.render_window.GetClassName()
+                    assert backend == 'vtkWin32OpenGLRenderWindow', backend
+                progress('Initializing native timer and rendering first frame')
+                viewer.watch_source(reader)
+                viewer.plotter.show(interactive_update=True, auto_close=False)
+                progress('Writing updated snapshot')
+                a, m = render(pattern='wave', pixels=256)
+                write_snapshot(source, a, m)
+                deadline = time.monotonic() + 5
+                while viewer.meta['pattern'] != 'wave' and time.monotonic() < deadline:
+                    viewer.plotter.update()
+                    time.sleep(.01)
+                assert viewer.meta['pattern'] == 'wave', 'Native update timer did not fire'
+                progress('Native update timer delivered new pattern')
+            finally:
+                viewer.plotter.close()
+                progress('Native viewer closed')
         ''')
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run([sys.executable, '-c', script, str(Path(directory)/'source.npz')],
-                                    cwd=Path(__file__).resolve().parent.parent, capture_output=True, text=True, timeout=15)
+            try:
+                # Includes cold imports, shader compilation, first render,
+                # the separate five-second update deadline, and teardown.
+                result = subprocess.run(
+                    [sys.executable, '-u', '-c', script, str(Path(directory)/'source.npz')],
+                    cwd=Path(__file__).resolve().parent.parent,
+                    capture_output=True, text=True, timeout=60)
+            except subprocess.TimeoutExpired as exc:
+                output = b''.join(part.encode() if isinstance(part, str) else part
+                                  for part in (exc.stdout, exc.stderr) if part)
+                self.fail('Native viewer exceeded 60 seconds. Last progress:\n' +
+                          output.decode('utf-8', errors='replace'))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            print(result.stdout, end='')
 
     def test_mesh_keeps_depth_spacing_orientation_and_sampling(self):
         source = np.zeros((7, 7), dtype=np.uint16)

@@ -1,6 +1,6 @@
 # Watch Dial Pattern Generator
 
-Current version: **1.3.0**. See [release notes](RELEASE-NOTES.md) for changes.
+Current version: **1.3.1**. See [release notes](RELEASE-NOTES.md) for changes.
 
 A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 27 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
@@ -136,14 +136,17 @@ python3 dial_patterns.py --cli --pattern rosette --pitch-mm 0.75 --grooves 24 --
 python3 dial_patterns.py --cli --pattern tapisserie --pitch-mm 0.75 --groove-width-mm 0.30 --bevel-width-mm 0.08 --output tapisserie.png
 python3 dial_patterns.py --cli --pattern honeycomb --pitch-mm 0.8 --output honeycomb.png
 python3 dial_patterns.py --cli --pattern ingenieur --pitch-mm 2.0 --ingenieur-count 3 --ingenieur-gap-mm 0.06 --ingenieur-feature-width-mm 0.10 --output ingenieur.png
+python3 dial_patterns.py --cli --pattern spirograph --spirograph-fixed-teeth 30 --spirograph-rolling-teeth 11 --spirograph-pen-offset 1.55 --spirograph-diameter-mm 26 --groove-width-mm 0.20 --output spirograph.png
 python3 dial_patterns.py --help
 ```
 
 To see all available options for the CLI, use the `-h` or `--help` command line parameter.
 
-Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, `dimples`, and `ingenieur`.
+Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `spirograph`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, `dimples`, and `ingenieur`.
 
-[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 27 patterns.
+Spirograph traces a closed, flower-like hypotrochoid as a V-shaped groove in a flat surface. The default `v_cut` groove profile has straight slopes from the dark valley through gray intermediate heights to the white surface; select `rounded` for the original curved groove. Groove width sets the slope span and Target depth sets the vertical range. Try a groove width of 0.6–1.0 mm for broader, more visible slopes; the original 0.20 mm width appears as fine lines when zoomed out. The fixed and rolling gear tooth counts control the loop arrangement; pen offset is measured in rolling-gear radii (above 1 creates crossing loops). Diameter sets the curve size independently of the area width; allow an extra groove width around the centerline diameter. Rotation turns the whole design. The existing Rosette remains available for rippled radial rings.
+
+[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 28 patterns.
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
@@ -215,11 +218,11 @@ list under `exclusion_zones`. Rebuild the comparison image with
 python3 -m tests.test_patterns
 ```
 
-This tests all 27 generators and PNG exports and creates `images/pattern_catalog.png`.
+This tests all 28 generators and PNG exports and creates `images/pattern_catalog.png`.
 
 ## Full test suite (including real Tkinter GUI interaction)
 
-The test runner exercises all 27 mathematical pattern renderers and GUI workflows.
+The test runner exercises all 28 mathematical pattern renderers and GUI workflows.
 It opens a real Tk window, selects every pattern, verifies visible parameter controls,
 updates a preview, invokes the GUI export button, and verifies 8/16-bit PNG and JSON output.
 Native save dialogs and message boxes are mocked to make tests deterministic.
