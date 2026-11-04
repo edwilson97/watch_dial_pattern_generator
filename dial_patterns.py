@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image, ImageTk
 from exclusion_zones import apply_zones, validate_zones
 
-__version__ = '1.3.1'
+__version__ = '1.4.0'
 
 PATTERNS = {
     'hobnail': 'Clous de Paris / Hobnail',
@@ -44,6 +44,7 @@ PATTERNS = {
     'brick': 'Brick / Running Bond / Herringbone',
     'dimples': 'Dimples (golf ball texture)',
     'ingenieur': 'Ribs & Posts',
+    'interlockingy': 'Interlocking Y Blocks',
 
 }
 
@@ -54,6 +55,14 @@ ENUM_FIELDS = {
     'brick_style': ('faceted', 'engraved', 'rounded'),
     'brick_layout': ('running_bond', 'herringbone'),
 }
+
+# Repeating Cartesian patterns provide visible rows that can wrap around a dome.
+DOME_PATTERNS = frozenset({
+    'hobnail', 'barleycorn', 'basketweave', 'tapisserie', 'fishscales',
+    'wave', 'horizontalribbing', 'graindorge', 'panier', 'moire', 'chevron',
+    'honeycomb', 'perlage', 'diamondlattice', 'isometriccubes', 'fanscallop',
+    'asanoha', 'brick', 'dimples', 'ingenieur', 'interlockingy',
+})
 
 
 def _hex_cell_coordinates(u, v):
@@ -87,6 +96,22 @@ def _segment_distance(px, py, ax, ay, bx, by):
     dx, dy = bx - ax, by - ay
     t = np.clip(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0, 1)
     return np.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _dome_coordinates(u, v, dial_radius, strength):
+    """Inverse spherical projection; coordinates and radius share units.
+
+    Arc distance on a sphere becomes projected radius on the dial. Continue
+    tangentially outside the dial circle so square exports remain continuous.
+    """
+    if strength == 0:
+        return u, v
+    radius = np.hypot(u, v) / dial_radius
+    curvature = .95 * strength
+    arc = np.arcsin(np.minimum(radius, 1) * curvature) / curvature
+    arc += np.maximum(radius - 1, 0) / np.sqrt(1 - curvature**2)
+    scale = np.divide(arc, radius, out=np.ones_like(radius), where=radius > 0)
+    return u * scale, v * scale
 
 
 def _dimple_height(u, v, pitch_mm, diameter_mm):
@@ -206,6 +231,47 @@ def _cube_height(u, v, pitch_mm, cube_gap_mm, cube_step_fraction):
     groove_transition = np.clip((distance - half_gap * .6) / max(half_gap * .8, 1e-6), 0, 1)
     return face * groove_transition
 
+
+
+def _interlocking_y_height(u, v, pitch_mm, gap_mm, step_fraction):
+    """Staggered concave Y blocks, each with three real height terraces.
+
+    Pitch is the horizontal center spacing. Three chevron-shaped faces meet
+    along the Y's arms; small triangular voids separate neighboring blocks.
+    Pixel brightness encodes physical relief, without simulated illumination.
+    """
+    unit_y = 1 / (4 * np.sqrt(3))
+    vertices = np.array([
+        [-3/8, -1.5*unit_y], [-2/8, -2*unit_y], [0, -unit_y],
+        [2/8, -2*unit_y], [3/8, -1.5*unit_y], [3/8, -.5*unit_y],
+        [1/8, .5*unit_y], [1/8, 2.5*unit_y], [0, 3*unit_y],
+        [-1/8, 2.5*unit_y], [-1/8, .5*unit_y], [-3/8, -.5*unit_y],
+    ])
+    u, v = np.broadcast_arrays(u, v)
+    height = np.zeros(u.shape, dtype=np.float32)
+    row_pitch = 2 * unit_y
+    row0 = np.floor(v / row_pitch)
+    levels = np.array([1 - 2*step_fraction, 1, 1 - step_fraction], dtype=np.float32)
+    half_gap = gap_mm / (2 * pitch_mm)
+    for dr in (-1, 0, 1):
+        row = row0 + dr
+        xx = np.mod(u - .5*np.mod(row, 2) + .5, 1) - .5
+        yy = v - row*row_pitch
+        inside = np.zeros(u.shape, dtype=bool)
+        distance = np.full(u.shape, np.inf, dtype=np.float32)
+        for i, a in enumerate(vertices):
+            b = vertices[(i + 1) % len(vertices)]
+            inside ^= ((a[1] > yy) != (b[1] > yy)) & (
+                xx < a[0] + (b[0] - a[0]) * (yy - a[1]) / (b[1] - a[1]))
+            distance = np.minimum(distance, _segment_distance(xx, yy, *a, *b))
+        # Internal seams follow the three arms, dividing three bent panels.
+        for i in (0, 4, 8):
+            distance = np.minimum(distance, _segment_distance(xx, yy, 0, 0, *vertices[i]))
+        sector = (np.floor(np.mod(np.arctan2(yy, xx) - np.pi/2, 2*np.pi)
+                           / (2*np.pi/3)).astype(np.int32) % 3)
+        edge = np.clip((distance - half_gap) / max(half_gap, 1e-7), 0, 1)
+        height = np.maximum(height, np.where(inside, levels[sector] * edge, 0))
+    return height
 
 
 def _woven_height(u, v, base):
@@ -385,7 +451,7 @@ def _spirograph_height(coord, fixed, rolling, offset, diameter_mm, width_mm, rot
     return 1 - np.sqrt(np.maximum(0, 1 - normalized**2))
 
 
-PATTERN_PITCH_DEFAULTS = {'hobnail': 1.0, 'ingenieur': 2.0}
+PATTERN_PITCH_DEFAULTS = {'hobnail': 1.0, 'ingenieur': 2.0, 'interlockingy': 2.0}
 
 
 def default_pitch(pattern):
@@ -405,13 +471,25 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
            brick_layout='running_bond', ingenieur_count=3, ingenieur_gap_mm=0.06,
            ingenieur_feature_width_mm=0.10, exclusion_zones=None,
            spirograph_fixed_teeth=30, spirograph_rolling_teeth=11,
-           spirograph_pen_offset=1.55, spirograph_diameter_mm=26.0, spirograph_style='v_cut'):
+           spirograph_pen_offset=1.55, spirograph_diameter_mm=26.0, spirograph_style='v_cut',
+           dimple_dome=0.0, dome=0.0, y_block_gap_mm=0.04, y_block_step_fraction=0.22):
     """Return uint16 height map and metadata. White = high, black = low.
 
     depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
     """
     if pattern not in PATTERNS:
         raise ValueError('Unknown pattern: ' + pattern)
+    # Retain the original dimple API/CLI setting for saved designs and scripts.
+    if pattern == 'dimples' and dimple_dome != 0:
+        if not 0 <= dimple_dome <= 1:
+            raise ValueError('Dimple 3D dome effect must be between 0 and 1')
+        if dome != 0 and dome != dimple_dome:
+            raise ValueError('Use matching values for dome and the legacy dimple_dome option')
+        dome = dimple_dome
+    if not 0 <= dome <= 1:
+        raise ValueError('3D dome effect must be between 0 and 1')
+    if dome and pattern not in DOME_PATTERNS:
+        raise ValueError('3D dome effect is unavailable for pattern: ' + pattern)
     exclusion_zones = validate_zones(exclusion_zones)
     if pitch_mm is None:
         pitch_mm = default_pitch(pattern)
@@ -481,6 +559,11 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
     if pattern == 'dimples':
         if not math.isfinite(pitch_mm) or not 0 < dimple_diameter_mm <= pitch_mm:
             raise ValueError('Dimple diameter must be positive and no larger than the pattern pitch')
+    if pattern == 'interlockingy':
+        if not math.isfinite(pitch_mm) or not 0 <= y_block_gap_mm < pitch_mm / 8:
+            raise ValueError('Y-block joint width must be nonnegative and smaller than pitch / 8')
+        if not 0 < y_block_step_fraction < .5:
+            raise ValueError('Y-block face height step must be greater than 0 and less than 0.5')
     if pattern == 'ingenieur':
         if not math.isfinite(pitch_mm) or not 0 <= ingenieur_gap_mm < pitch_mm:
             raise ValueError('Grid square gap must be nonnegative and smaller than pitch')
@@ -497,13 +580,22 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
     ang = math.radians(rotation)
     u = (x * math.cos(ang) + y * math.sin(ang)) / pitch_mm
     v = (-x * math.sin(ang) + y * math.cos(ang)) / pitch_mm
+    pattern_x, pattern_y = x, y
+    if dome:
+        if pattern in ('moire', 'diamondlattice'):
+            pattern_x, pattern_y = _dome_coordinates(x, y, size_mm / 2, dome)
+        else:
+            u, v = _dome_coordinates(u, v, size_mm / (2 * pitch_mm), dome)
     tau = 2 * math.pi
     frac = lambda a: np.mod(a, 1.0)
     tri = lambda a: 1.0 - 2.0 * np.abs(frac(a) - 0.5)
     rr = np.sqrt(x*x + y*y)
     theta = np.arctan2(y, x)
 
-    if pattern == 'ingenieur':
+    if pattern == 'interlockingy':
+        h = _interlocking_y_height(u + phase, v + phase, pitch_mm,
+                                   y_block_gap_mm, y_block_step_fraction)
+    elif pattern == 'ingenieur':
         h = _ingenieur_height(u + phase, v + phase, pitch_mm, ingenieur_count,
                               ingenieur_gap_mm, ingenieur_feature_width_mm)
     elif pattern == 'dimples':
@@ -610,8 +702,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
         h = .5 + .5 * np.cos(tau * (rr / pitch_mm - grooves * theta / tau + phase))
     elif pattern == 'moire':
         t = math.radians(angle_deg)
-        wave_a = np.cos(tau * (x / pitch_mm + phase))
-        wave_b = np.cos(tau * ((x*np.cos(t) + y*np.sin(t)) / secondary_pitch_mm + phase))
+        wave_a = np.cos(tau * (pattern_x / pitch_mm + phase))
+        wave_b = np.cos(tau * ((pattern_x*np.cos(t) + pattern_y*np.sin(t)) / secondary_pitch_mm + phase))
         h = np.clip(.5 + .25 * (wave_a + wave_b), 0, 1)
     elif pattern == 'chevron':
         # Mirrored diagonal ridges, alternating direction by row.
@@ -647,8 +739,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
                             perlage_ring_pitch_mm, perlage_overlap)
     elif pattern == 'diamondlattice':
         t = math.radians(angle_deg)
-        a = (x*np.cos(t) + y*np.sin(t))/pitch_mm
-        b = (x*np.cos(t) - y*np.sin(t))/pitch_mm
+        a = (pattern_x*np.cos(t) + pattern_y*np.sin(t))/pitch_mm
+        b = (pattern_x*np.cos(t) - pattern_y*np.sin(t))/pitch_mm
         da = np.abs(frac(a + phase)-.5)*2
         db = np.abs(frac(b + phase)-.5)*2
         h = np.clip((1-da)*(1-db), 0, 1)
@@ -687,6 +779,8 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
                 brick_style=brick_style, brick_layout=brick_layout,
                 perlage_ring_pitch_mm=perlage_ring_pitch_mm,
                 perlage_overlap=perlage_overlap, dimple_diameter_mm=dimple_diameter_mm,
+                dome=dome, dimple_dome=dome if pattern == 'dimples' else 0.0,
+                y_block_gap_mm=y_block_gap_mm, y_block_step_fraction=y_block_step_fraction,
                 ingenieur_count=ingenieur_count, ingenieur_gap_mm=ingenieur_gap_mm,
                 ingenieur_feature_width_mm=ingenieur_feature_width_mm,
                 spirograph_fixed_teeth=spirograph_fixed_teeth,
@@ -752,8 +846,12 @@ PATTERN_FIELDS = {
     'brick': ('brick_layout', 'brick_width_mm', 'brick_height_mm', 'brick_joint_mm', 'brick_bevel_mm', 'brick_row_offset', 'brick_style', 'rotation', 'phase'),
     'dimples': ('pitch_mm', 'dimple_diameter_mm', 'rotation', 'phase'),
     'ingenieur': ('pitch_mm', 'ingenieur_count', 'ingenieur_gap_mm', 'ingenieur_feature_width_mm', 'rotation', 'phase'),
+    'interlockingy': ('pitch_mm', 'y_block_gap_mm', 'y_block_step_fraction', 'rotation', 'phase'),
 
 }
+for _pattern in DOME_PATTERNS:
+    PATTERN_FIELDS[_pattern] += ('dome',)
+
 FIELD_SPECS = {
     'spirograph_style': ('Spirograph groove profile', 'v_cut'),
     'spirograph_fixed_teeth': ('Spirograph fixed gear teeth (3–96)', '30'),
@@ -797,13 +895,38 @@ FIELD_SPECS = {
     'brick_style': ('Brick relief style', 'faceted'),
     'brick_layout': ('Brick layout', 'running_bond'),
     'dimple_diameter_mm': ('Dimple diameter (mm)', '0.65'),
+    'dome': ('3D dome effect (0–1)', '0'),
     'ingenieur_count': ('Grid ribs / posts per row', '3'),
     'ingenieur_gap_mm': ('Grid square gap (mm)', '0.06'),
     'ingenieur_feature_width_mm': ('Grid rib / post width (mm)', '0.10'),
+    'y_block_gap_mm': ('Y-block joint width (mm)', '0.04'),
+    'y_block_step_fraction': ('Y-block face height step (0–0.5)', '0.22'),
+}
+
+# Only fixed, bounded adjustments get sliders. Physical dimensions retain exact
+# entries because their valid limits often depend on other fields.
+# Each tuple is (minimum, maximum, keyboard/drag increment).
+SLIDER_FIELDS = {
+    'dome': (0, 1, .01),
+    'softness': (0, 1, .01),
+    'background': (0, 1, .01),
+    'ridge_height_fraction': (0, 1, .01),
+    'flame_taper': (0, 1, .01),
+    'ribbon_curvature': (0, 2, .01),
+    'rosette_harmonics': (0, 1, .01),
+    'amplitude': (0, 2, .01),
+    'cube_step_fraction': (.01, .49, .01),
+    'brick_row_offset': (0, 1, .01),
+    'perlage_overlap': (0, .5, .01),
+    'spirograph_pen_offset': (0, 2, .01),
+    'y_block_step_fraction': (.01, .49, .01),
 }
 
 
 FIELD_TOOLTIPS = {
+    'y_block_gap_mm': 'Set the recessed joint width in millimeters, from 0 to less than one eighth of Pattern pitch. Joints outline the Y blocks and separate their three faces, with short bevels along the edges. Pitch is horizontal center-to-center spacing; neighboring rows are staggered.',
+    'y_block_step_fraction': 'Set the height difference between the three Y-block faces, greater than 0 and less than 0.5. Faces sit at full height, one step lower, and two steps lower. Target depth sets the total vertical range; all three faces are actual relief levels.',
+    'dome': 'Set 0 for the regular flat layout, or increase toward 1 to wrap the pattern around a virtual dome. Rows curve and features compress radially toward the dial edge. Try 0.8 with Circular mask enabled. Feature dimensions describe the center; target depth still sets the relief range.',
     'spirograph_style': 'Choose v_cut for straight sloping walls meeting at a sharp valley, or rounded for a curved bowl. Gray values encode intermediate heights. Increase Groove width to spread the slopes over more of the dial; Target depth sets their vertical range.',
     'spirograph_fixed_teeth': 'Enter a whole number from 3 to 96 for the fixed outer gear. Together with the rolling gear count, this sets the number and repetition of loops.',
     'spirograph_rolling_teeth': 'Enter a whole number greater than 0 and smaller than the fixed gear count. The inner gear rolls inside the fixed gear; the curve always completes a closed cycle.',
@@ -859,6 +982,7 @@ def run_gui():
     except ImportError as e:
         raise SystemExit('Tkinter is unavailable. Install python3-tk or use --cli.') from e
     from gui_tooltips import add_tooltip
+    from gui_controls import add_range_slider
 
     root = tk.Tk()
     root.title(f'Watch Dial Pattern Generator v{__version__}')
@@ -892,6 +1016,29 @@ def run_gui():
     values = {key: tk.StringVar(value=default) for key, (_, default) in FIELD_SPECS.items()}
     field_rows = {}
     field_inputs = {}
+    field_sliders = {}
+    preview_timer = None
+
+    def cancel_preview(event=None):
+        nonlocal preview_timer
+        if event is not None and event.widget is not root:
+            return
+        if preview_timer is not None:
+            root.after_cancel(preview_timer)
+            preview_timer = None
+
+    def schedule_preview():
+        nonlocal preview_timer
+        cancel_preview()
+
+        def refresh():
+            nonlocal preview_timer
+            preview_timer = None
+            preview_on_focus_out(None)
+
+        preview_timer = root.after(180, refresh)
+
+    root.bind('<Destroy>', cancel_preview, add='+')
     for key, (label, _) in FIELD_SPECS.items():
         row = ttk.Frame(field_frame)
         ttk.Label(row, text=label).pack(anchor='w')
@@ -900,7 +1047,15 @@ def run_gui():
             widget.set(values[key].get())
         else:
             widget = ttk.Entry(row, textvariable=values[key], width=34)
-        widget.pack(fill='x', pady=(1, 7))
+        if key in SLIDER_FIELDS:
+            widget.configure(width=9)
+            widget.pack(side='right', pady=(1, 7), padx=(8, 0))
+            slider = add_range_slider(row, values[key], SLIDER_FIELDS[key], schedule_preview)
+            slider.pack(side='left', fill='x', expand=True, pady=(1, 7))
+            add_tooltip(slider, FIELD_TOOLTIPS[key] + ' Drag or use arrow keys to adjust; type an exact value in the box.')
+            field_sliders[key] = slider
+        else:
+            widget.pack(fill='x', pady=(1, 7))
         add_tooltip(widget, FIELD_TOOLTIPS[key])
         field_rows[key] = row
         field_inputs[key] = widget
@@ -1012,9 +1167,11 @@ def run_gui():
 
     def update_preview():
         nonlocal preview_params
-        field_inputs['brick_row_offset'].configure(
-            state='disabled' if selected_pattern() == 'brick' and
-            values['brick_layout'].get() == 'herringbone' else 'normal')
+        cancel_preview()
+        offset_state = ('disabled' if selected_pattern() == 'brick' and
+                        values['brick_layout'].get() == 'herringbone' else 'normal')
+        field_inputs['brick_row_offset'].configure(state=offset_state)
+        field_sliders['brick_row_offset'].configure(state=offset_state)
         try:
             current_params = params()
             im, meta = render_preview(**current_params)
@@ -1140,7 +1297,7 @@ def main():
     parser.add_argument('--size-mm', type=float, default=28.5)
     parser.add_argument('--pixels', type=int, default=2048)
     parser.add_argument('--pitch-mm', type=float, default=None,
-                        help='Pattern pitch in mm (default: 1.0 for Hobnail, 2.0 for Ribs & Posts, 0.75 otherwise)')
+                        help='Pattern pitch in mm (default: 1.0 for Hobnail, 2.0 for Ribs & Posts and Interlocking Y Blocks, 0.75 otherwise)')
     parser.add_argument('--depth-mm', type=float, default=.15)
     parser.add_argument('--rotation', type=float, default=0)
     parser.add_argument('--phase', type=float, default=0)
@@ -1186,6 +1343,14 @@ def main():
     parser.add_argument('--perlage-overlap', type=float, default=.5)
     parser.add_argument('--dimple-diameter-mm', type=float, default=.65,
                         help='Dimple diameter in mm, positive and no larger than pattern pitch')
+    parser.add_argument('--dimple-dome', type=float, default=0,
+                        help='Legacy alias for --dome on the dimples pattern')
+    parser.add_argument('--dome', type=float, default=0,
+                        help='3D dome layout strength, 0 (flat) to 1 (strong); repeating Cartesian patterns only')
+    parser.add_argument('--y-block-gap-mm', type=float, default=.04,
+                        help='Interlocking Y joint width, nonnegative and smaller than pitch / 8')
+    parser.add_argument('--y-block-step-fraction', type=float, default=.22,
+                        help='Interlocking Y face height step, greater than 0 and less than 0.5')
     parser.add_argument('--output', default='watch_dial_heightmap.png')
     parser.add_argument('--ingenieur-count', type=int, default=3,
                         help='Ribs per line square and rows/columns per post square (1–12)')

@@ -1,8 +1,8 @@
 # Watch Dial Pattern Generator
 
-Current version: **1.3.1**. See [release notes](RELEASE-NOTES.md) for changes.
+Current version: **1.4.0**. See [release notes](RELEASE-NOTES.md) for changes.
 
-A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 27 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
+A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 29 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
 ## Donate/Sponsor
 
@@ -142,17 +142,55 @@ python3 dial_patterns.py --help
 
 To see all available options for the CLI, use the `-h` or `--help` command line parameter.
 
-Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `spirograph`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, `dimples`, and `ingenieur`.
+Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `spirograph`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, `dimples`, `ingenieur`, and `interlockingy`.
+
+**Interlocking Y Blocks** repeats staggered Y-shaped blocks with three bent faces.
+The faces sit at three actual relief levels: full height, one step lower, and two
+steps lower. **Y-block face height step** adjusts the difference between them;
+**Y-block joint width** controls recessed outlines and internal seams with short
+edge bevels. Small triangular spaces remain between the blocks even at zero joint
+width. **Pattern pitch** is the horizontal center spacing (default 2 mm). Rotation,
+pattern offset, dome strength, circular masking, and exclusion zones are supported.
+
+```bash
+python3 dial_patterns.py --cli --pattern interlockingy --pitch-mm 2 --y-block-gap-mm 0.04 --y-block-step-fraction 0.22 --circular --output interlocking_y.png
+```
+
+Repeating grid, woven, and linear patterns include a shared **3D dome effect (0–1)**
+setting. Zero keeps the original layout; increasing it curves the rows and compresses features radially toward
+the dial edge, giving the impression of a spherical surface. Try **0.8** with
+**Circular mask** enabled. Feature dimensions and pitch specify dimensions at the
+center; projected spacing and radial widths decrease toward the rim. The effect
+changes the layout while preserving the pattern's relief profile.
+Target depth continues to set the relief range, and exclusion zones stay fixed to the dial.
+
+The control is available for **Hobnail, Tapisserie, Honeycomb, Brick, Diamond Lattice,
+Asanoha, Basket Weave, Panier, Perlage, Dimples, Isometric Cubes, Ribs & Posts,
+Barleycorn, Fish Scales, Grain d’Orge, Fan / Scallop, Chevron, Wave, Horizontal Ribbing,
+Moiré, and Interlocking Y Blocks**. Radial designs and Spirograph keep their existing controls.
+It is also available in the CLI; the original `--dimple-dome` option remains supported for Dimples:
+
+```bash
+python3 dial_patterns.py --cli --pattern honeycomb --dome 0.8 --circular --output honeycomb_dome.png
+python3 dial_patterns.py --cli --pattern dimples --dome 0.8 --circular --output dimples_dome.png
+```
 
 Spirograph traces a closed, flower-like hypotrochoid as a V-shaped groove in a flat surface. The default `v_cut` groove profile has straight slopes from the dark valley through gray intermediate heights to the white surface; select `rounded` for the original curved groove. Groove width sets the slope span and Target depth sets the vertical range. Try a groove width of 0.6–1.0 mm for broader, more visible slopes; the original 0.20 mm width appears as fine lines when zoomed out. The fixed and rolling gear tooth counts control the loop arrangement; pen offset is measured in rolling-gear radii (above 1 creates crossing loops). Diameter sets the curve size independently of the area width; allow an extra groove width around the centerline diameter. Rotation turns the whole design. The existing Rosette remains available for rippled radial rings.
 
-[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 28 patterns.
+[View the pattern catalog (PNG)](images/pattern_catalog.png) for a visual guide to all 29 patterns.
 
 The GUI shows only fields relevant to the chosen pattern and includes a scrollable settings area.
 
 The GUI remembers edited pitch values per pattern until **Reset to defaults**.
 
-The grayscale preview refreshes when you edit a parameter and move focus to another
+On/off settings use checkboxes, and named choices use dropdowns. Bounded visual
+adjustments such as dome strength, softness, taper, and overlap have sliders beside
+their numeric boxes. Click the slider track to select that position, drag the thumb,
+or use arrow keys for 0.01 increments. The preview refreshes after a short pause.
+Numeric boxes still accept exact values,
+including finer increments. Dimensions and counts retain numeric entry fields.
+
+The grayscale preview refreshes when you type a parameter and move focus to another
 field. Pattern, style, and checkbox changes refresh immediately. Invalid entries
 keep the last valid preview visible and show an error in the status text.
 
@@ -218,11 +256,11 @@ list under `exclusion_zones`. Rebuild the comparison image with
 python3 -m tests.test_patterns
 ```
 
-This tests all 28 generators and PNG exports and creates `images/pattern_catalog.png`.
+This tests all 29 generators and PNG exports and creates `images/pattern_catalog.png`.
 
 ## Full test suite (including real Tkinter GUI interaction)
 
-The test runner exercises all 28 mathematical pattern renderers and GUI workflows.
+The test runner exercises all 29 mathematical pattern renderers and GUI workflows.
 It opens a real Tk window, selects every pattern, verifies visible parameter controls,
 updates a preview, invokes the GUI export button, and verifies 8/16-bit PNG and JSON output.
 Native save dialogs and message boxes are mocked to make tests deterministic.

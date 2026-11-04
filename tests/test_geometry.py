@@ -29,7 +29,7 @@ class GeometryTests(unittest.TestCase):
         wider, _ = render(**{**options, 'groove_width_mm': .5})
         self.assertGreater(np.count_nonzero(wider == 0), np.count_nonzero(array == 0))
         self.assertEqual(set(PATTERN_FIELDS['horizontalribbing']),
-                         {'pitch_mm', 'groove_width_mm', 'rotation', 'phase'})
+                         {'pitch_mm', 'groove_width_mm', 'rotation', 'phase', 'dome'})
 
     def test_horizontal_ribbing_invalid_grooves(self):
         for width in (-.1, 0, .75, 1, float('nan'), float('inf')):
