@@ -181,7 +181,8 @@ def relief_mesh(array, span_mm, depth_mm, max_samples=401):
 
 def inspection_samples(meta, span_mm):
     """Keep several mesh samples across narrow lattice grooves when available."""
-    width_field = {'asanoha': 'line_width_mm', 'isometriccubes': 'cube_gap_mm'}.get(meta.get('pattern'))
+    width_field = {'asanoha': 'line_width_mm', 'isometriccubes': 'cube_gap_mm',
+                   'interlockingy': 'y_block_gap_mm'}.get(meta.get('pattern'))
     width = meta.get(width_field) if width_field else None
     if width is None or not math.isfinite(width) or width <= 0:
         return 401

@@ -17,6 +17,95 @@ def descendants(widget):
 
 
 class GuiTests(unittest.TestCase):
+    def test_slider_clicks_and_drags_follow_pointer(self):
+        from gui_controls import add_range_slider
+        root = tk.Tk()
+        root.geometry('320x100')
+        try:
+            for bounds in ((0, 1, .01), (0, 2, .01), (.01, .49, .01)):
+                with self.subTest(bounds=bounds):
+                    lower, upper, step = bounds
+                    value = tk.StringVar(master=root, value=str(lower))
+                    slider = add_range_slider(root, value, bounds, lambda: None)
+                    slider.pack(fill='x', padx=10)
+                    root.update()
+                    y = slider.winfo_height() // 2
+                    width = slider.winfo_width()
+                    for fraction in (.25, .75, .5, .25):
+                        x = round(width * fraction)
+                        slider.event_generate('<ButtonPress-1>', x=x, y=y)
+                        slider.event_generate('<ButtonRelease-1>', x=x, y=y)
+                        root.update()
+                        self.assertAlmostEqual(float(value.get()), lower + fraction * (upper - lower),
+                                               delta=.04 * (upper - lower) + step)
+                    # Holding on the track must not trigger native repeat jumps.
+                    x = width // 3
+                    slider.event_generate('<ButtonPress-1>', x=x, y=y)
+                    held = value.get()
+                    deadline = time.monotonic() + .4
+                    while time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(.01)
+                    self.assertEqual(value.get(), held)
+                    slider.event_generate('<B1-Motion>', x=round(width * .7), y=y)
+                    root.update()
+                    self.assertAlmostEqual(float(value.get()), lower + .7 * (upper - lower),
+                                           delta=.04 * (upper - lower) + step)
+                    slider.event_generate('<ButtonRelease-1>', x=width, y=y)
+                    self.assertEqual(float(value.get()), upper)
+                    slider.state(['disabled'])
+                    slider.event_generate('<ButtonPress-1>', x=0, y=y)
+                    slider.event_generate('<B1-Motion>', x=width // 2, y=y)
+                    slider.event_generate('<ButtonRelease-1>', x=0, y=y)
+                    root.update()
+                    self.assertEqual(float(value.get()), upper)
+                    slider.destroy()
+        finally:
+            root.destroy()
+
+    def test_slider_keeps_exact_entry_values_and_supports_keyboard(self):
+        from gui_controls import add_range_slider
+        root = tk.Tk()
+        try:
+            value = tk.StringVar(master=root, value='.333333')
+            changes = []
+            slider = add_range_slider(root, value, (0, 1, .01), lambda: changes.append(value.get()))
+            slider.pack()
+            root.update()
+            self.assertEqual(value.get(), '.333333')
+            self.assertAlmostEqual(slider.get(), .333333)
+            slider.set(.7777)
+            self.assertEqual(value.get(), '0.78')
+            self.assertAlmostEqual(slider.get(), .78)
+            self.assertEqual(changes, ['0.78'])
+            for text in ('', '-', 'nan', 'inf'):
+                value.set(text)
+                self.assertEqual(value.get(), text)
+                self.assertAlmostEqual(slider.get(), .78)
+            value.set('1.2')
+            self.assertEqual(value.get(), '1.2')
+            self.assertEqual(slider.get(), 1)
+            value.set('.456789')
+            self.assertEqual(value.get(), '.456789')
+            self.assertAlmostEqual(slider.get(), .456789)
+            self.assertEqual(len(changes), 1)
+            slider.focus_force()
+            root.update()
+            for key, expected in (('Home', '0'), ('Right', '0.01'),
+                                  ('End', '1'), ('Left', '0.99')):
+                slider.event_generate('<' + key + '>')
+                root.update()
+                self.assertEqual(value.get(), expected)
+            slider.state(['disabled'])
+            slider.event_generate('<Home>')
+            root.update()
+            self.assertEqual(value.get(), '0.99')
+            # Destroying a slider removes its variable trace.
+            slider.destroy()
+            value.set('0')
+        finally:
+            root.destroy()
+
     def exercise_exclusion_editor(self, root):
         root.update()
         buttons = {w.cget('text'): w for w in descendants(root) if isinstance(w, ttk.Button)}
@@ -149,7 +238,7 @@ class GuiTests(unittest.TestCase):
                     self.assertIn('Reset to defaults', buttons)
                     # Every editable control has help, including hidden pattern fields.
                     controls = [w for w in widgets if isinstance(
-                        w, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Checkbutton))]
+                        w, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Checkbutton, ttk.Scale))]
                     self.assertTrue(all(w.tooltip.text for w in controls))
                     # Hover help appears without stealing focus, then closes on exit.
                     button = buttons['Reset to defaults']
@@ -264,6 +353,9 @@ class GuiTests(unittest.TestCase):
                                        ('brick','Brick relief style'),
                                        ('brick','Brick layout'),
                                        ('dimples','Dimple diameter (mm)'),
+                                       ('dimples','3D dome effect (0–1)'),
+                                       ('interlockingy','Y-block joint width (mm)'),
+                                       ('interlockingy','Y-block face height step (0–0.5)'),
                                        ('asanoha','Asanoha line width (mm)'),
                                        ('asanoha','Asanoha relief style'),
                                        ('isometriccubes','Cube border groove (mm)'),
@@ -272,6 +364,42 @@ class GuiTests(unittest.TestCase):
                         combo.event_generate('<<ComboboxSelected>>')
                         root.update()
                         self.assertTrue(fields[label][0].winfo_manager(), pat)
+                    # The shared dome control reaches previews and exported settings.
+                    combo.current(list(app.PATTERNS).index('honeycomb'))
+                    combo.event_generate('<<ComboboxSelected>>')
+                    root.update()
+                    dome = fields['3D dome effect (0–1)'][1]
+                    pixels = fields['Output pixels / side'][1]
+                    pixels.delete(0, 'end')
+                    pixels.insert(0, '256')
+                    with patch.object(app, 'render_preview', wraps=app.render_preview) as preview:
+                        slider = next(w for w in fields['3D dome effect (0–1)'][0].winfo_children()
+                                      if isinstance(w, ttk.Scale))
+                        for value in (.2, .4, .8):
+                            slider.set(value)
+                            root.update()
+                        preview.assert_not_called()
+                        deadline = time.monotonic() + 2
+                        while preview.call_count == 0 and time.monotonic() < deadline:
+                            root.update()
+                            time.sleep(.01)
+                        preview.assert_called_once()
+                        self.assertEqual(dome.get(), '0.8')
+                        self.assertEqual(preview.call_args.kwargs['dome'], .8)
+                        # Wheel gestures over sliders scroll without adjusting values.
+                        canvas.yview_moveto(1)
+                        root.update()
+                        previous_view = canvas.yview()
+                        slider.event_generate('<MouseWheel>', delta=delta)
+                        root.update()
+                        self.assertLess(canvas.yview()[0], previous_view[0])
+                        self.assertEqual(dome.get(), '0.8')
+                    dome_target = Path(directory) / 'honeycomb_dome.png'
+                    with patch('tkinter.filedialog.asksaveasfilename', return_value=str(dome_target)), \
+                         patch('tkinter.messagebox.showinfo'):
+                        buttons['Export PNG + settings'].invoke()
+                    import json
+                    self.assertEqual(json.loads(dome_target.with_suffix('.json').read_text())['dome'], .8)
                     # Reset must restore ALL values, including hidden fields and toggles.
                     combo.current(list(app.PATTERNS).index('brick'))
                     combo.event_generate('<<ComboboxSelected>>')
@@ -281,12 +409,16 @@ class GuiTests(unittest.TestCase):
                     layout.event_generate('<<ComboboxSelected>>')
                     root.update()
                     self.assertTrue(fields['Brick row offset (0–1)'][1].instate(['disabled']))
+                    offset_slider = next(w for w in fields['Brick row offset (0–1)'][0].winfo_children()
+                                         if isinstance(w, ttk.Scale))
+                    self.assertTrue(offset_slider.instate(['disabled']))
                     self.assertFalse(any(w.cget('text').startswith('Preview error:')
                                          for w in widgets if isinstance(w, ttk.Label)))
                     layout.set('running_bond')
                     layout.event_generate('<<ComboboxSelected>>')
                     root.update()
                     self.assertFalse(fields['Brick row offset (0–1)'][1].instate(['disabled']))
+                    self.assertFalse(offset_slider.instate(['disabled']))
                     layout.set('herringbone')
                     layout.event_generate('<<ComboboxSelected>>')
                     fields['Brick width (mm)'][1].delete(0, 'end')
@@ -310,6 +442,9 @@ class GuiTests(unittest.TestCase):
                         if key == 'pitch_mm':
                             default = str(app.default_pitch('hobnail'))
                         self.assertEqual(fields[label][1].get(), default, key)
+                        if key in app.SLIDER_FIELDS:
+                            slider = next(w for w in fields[label][0].winfo_children() if isinstance(w, ttk.Scale))
+                            self.assertAlmostEqual(slider.get(), float(default))
                     self.assertTrue(all(not w.instate(['selected']) for w in checks))
                     visible = {label for label,(frame,_) in fields.items() if frame.winfo_manager()}
                     self.assertEqual(visible, {app.FIELD_SPECS[k][0] for k in app.COMMON_FIELDS + app.PATTERN_FIELDS['hobnail']})

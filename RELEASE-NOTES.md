@@ -1,5 +1,12 @@
 # Release Notes
 
+## v1.4.0 — Interlocking Y Blocks, dome layouts, and slider controls
+
+- Native builds now run only after a pull request is merged into `main`, building that merged commit. Direct pushes, tags, manual dispatch, and unmerged PR closures do not start build jobs.
+- Added Interlocking Y Blocks, a staggered three-face relief pattern with adjustable pitch, joint width, face height steps, rotation, offset, and dome strength. Available in the GUI, CLI, previews, 3D inspection, and PNG/settings exports.
+- Added a shared dome layout option to compatible repeating patterns and sliders with exact numeric entry for bounded adjustments. Slider track clicks select the pointed-to value; dragging and keyboard adjustment remain available.
+- Expanded the pattern catalog to 29 families.
+
 ## v1.3.1 — Spirograph
 
 - Added Spirograph: a closed, looping hypotrochoid with adjustable fixed and rolling gear counts, pen offset, diameter, groove width, and rotation. Available in the GUI, CLI, live 3D inspection, and PNG/settings exports.

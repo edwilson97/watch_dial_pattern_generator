@@ -9,10 +9,54 @@ import unittest
 import numpy as np
 from PIL import Image
 
-from dial_patterns import _dimple_height, render
+from dial_patterns import _dome_coordinates, _dimple_height, render
 
 
 class DimpleTests(unittest.TestCase):
+    def test_dome_preserves_center_and_foreshortens_toward_edge(self):
+        # Inverse projection must stretch sampling progressively toward the rim,
+        # making the projected bowls narrower radially, without folding rows.
+        positions = np.linspace(0, 1.42, 1001)
+        for strength in (.001, .5, 1):
+            u, v = _dome_coordinates(positions, np.zeros_like(positions), 1, strength)
+            self.assertEqual(u[0], 0)
+            np.testing.assert_array_equal(v, 0)
+            self.assertAlmostEqual(u[1] / positions[1], 1, places=5)
+            self.assertTrue(np.all(np.isfinite(u)))
+            self.assertTrue(np.all(np.diff(u) > 0))
+            self.assertGreater(u[700] - u[699], u[100] - u[99])
+            a, b = _dome_coordinates(np.zeros_like(positions), -positions, 1, strength)
+            np.testing.assert_array_equal(a, 0)
+            np.testing.assert_allclose(b, -u)
+        u, v = _dome_coordinates(positions, -positions, 1, 0)
+        np.testing.assert_array_equal(u, positions)
+        np.testing.assert_array_equal(v, -positions)
+
+    def test_dome_layout_render_and_default_compatibility(self):
+        options = dict(pattern='dimples', pixels=256, size_mm=8, pitch_mm=1)
+        flat, _ = render(**options)
+        np.testing.assert_array_equal(flat, render(**options, dimple_dome=0)[0])
+        # Compare against the original unwarped lattice, not only the new default.
+        coord = (np.arange(256, dtype=np.float32) + .5) * (8 / 256) - 4
+        original = _dimple_height(coord[None, :], coord[:, None], 1, .65).astype(np.float32)
+        np.testing.assert_array_equal(flat, np.uint16(np.round(np.clip(original, 0, 1) * 65535)))
+        dome, meta = render(**options, dimple_dome=.8)
+        self.assertFalse(np.array_equal(flat, dome))
+        self.assertEqual(meta['dimple_dome'], .8)
+        inverted, _ = render(**options, dimple_dome=.8, invert=True)
+        np.testing.assert_allclose(dome.astype(int) + inverted.astype(int), 65535, atol=1)
+        masked, _ = render(**options, dimple_dome=1, circular=True, background=.25)
+        self.assertEqual(masked[0, 0], round(.25 * 65535))
+        # Projection scales with physical dial size rather than pixel count.
+        scaled, _ = render(pattern='dimples', pixels=256, size_mm=16, pitch_mm=2,
+                           dimple_diameter_mm=1.3, dimple_dome=.8)
+        np.testing.assert_array_equal(dome, scaled)
+
+    def test_invalid_dome_strengths(self):
+        for strength in (-.1, 1.01, float('nan'), float('inf')):
+            with self.subTest(strength=strength), self.assertRaisesRegex(ValueError, 'dome effect'):
+                render(pattern='dimples', pixels=128, dimple_dome=strength)
+
     def test_bowls_are_radial_and_recessed_with_flat_land(self):
         radii = np.array([0, .1, .2, .3, .4, .5], dtype=np.float32)
         heights = _dimple_height(radii, np.zeros_like(radii), 1, .8)
@@ -74,10 +118,11 @@ class DimpleTests(unittest.TestCase):
             path = Path(directory) / 'dimples.png'
             subprocess.run([sys.executable, 'dial_patterns.py', '--cli', '--pattern', 'dimples',
                             '--pixels', '256', '--pitch-mm', '1.2', '--dimple-diameter-mm', '1',
+                            '--dimple-dome', '.8',
                             '--depth-mm', '.08', '--output', str(path)],
                            check=True, capture_output=True)
             expected, _ = render(pattern='dimples', pixels=256, pitch_mm=1.2,
-                                 dimple_diameter_mm=1, depth_mm=.08)
+                                 dimple_diameter_mm=1, depth_mm=.08, dimple_dome=.8)
             with Image.open(path) as image:
                 np.testing.assert_array_equal(np.asarray(image), expected)
             with Image.open(path.with_name('dimples_8bit.png')) as image:
@@ -85,9 +130,10 @@ class DimpleTests(unittest.TestCase):
             meta = json.loads(path.with_suffix('.json').read_text())
             self.assertEqual(meta['dimple_diameter_mm'], 1)
             self.assertEqual(meta['depth_mm'], .08)
+            self.assertEqual(meta['dimple_dome'], .8)
             np.testing.assert_array_equal(render(**{
                 key: meta[key] for key in ('pattern', 'pixels', 'pitch_mm',
-                                          'dimple_diameter_mm', 'depth_mm')})[0], expected)
+                                          'dimple_diameter_mm', 'depth_mm', 'dimple_dome')})[0], expected)
 
 
 if __name__ == '__main__':
