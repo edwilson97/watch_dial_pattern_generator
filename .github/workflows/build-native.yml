@@ -1,16 +1,18 @@
 name: Build native apps
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [main, master]
-    tags: ['v*']
+  pull_request_target:
+    branches: [main]
+    types: [closed]
 
 permissions:
   contents: read
 
 jobs:
   build:
+    # Only build code already merged into main, with signing credentials from
+    # the base repository available for both local and fork-originated PRs.
+    if: ${{ github.event.pull_request.merged == true }}
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     environment: native-signing
@@ -30,6 +32,8 @@ jobs:
             runner: macos-15-intel
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'

@@ -25,9 +25,10 @@ The [Build native apps workflow](https://github.com/edwilson97/watch_dial_patter
 packages the app with Python, Tkinter, NumPy, Pillow, PyVista, and VTK included.
 Users do not need to install Python or run `pip`.
 
-To create downloads, push this workflow to GitHub, then open **Actions → Build native
-apps → Run workflow**. It also runs on pushes to `main`/`master` and
-tags beginning with `v`. After a successful run, download the matching artifact
+Native downloads are built automatically only after a pull request is merged into
+`main`. The workflow builds the merged commit; closing an unmerged PR skips the
+build jobs. Direct pushes, tags, and manual dispatch do not trigger native builds.
+After a successful run, open **Actions → Build native apps** and download the matching artifact
 from the run's **Artifacts** section and extract it. Each artifact is the ZIP itself,
 with no additional ZIP wrapper:
 
