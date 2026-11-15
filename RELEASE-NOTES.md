@@ -1,5 +1,13 @@
 # Release Notes
 
+## v1.5.0 — Radial Checkerboard and Turbine
+
+- Added Radial Checkerboard with adjustable concentric row count, even angular sector count, outward row growth, and a recessed center opening.
+- Added Turbine with concentric circular ribs and curved vanes. Successive bands bow in opposite directions, and each outer band doubles the vane count. Band count, inner vane count, bend direction and strength, rib width, and center opening are adjustable.
+- Added configurable grayscale edge transitions through Bevel width for both new patterns. Zero keeps sharp edges; positive widths encode sloped relief in previews, 3D inspection, and engraving exports.
+- Both patterns support rotation, offset, inversion, circular masking, exclusion zones, and 8/16-bit PNG plus JSON settings exports through the GUI and CLI.
+- Expanded the pattern catalog to 31 families, added radial geometry and export regressions to native-build CI, and refined inspection sampling for the new relief.
+
 ## v1.4.0 — Interlocking Y Blocks, dome layouts, and slider controls
 
 - Native builds now run only after a pull request is merged into `main`, building that merged commit. Direct pushes, tags, manual dispatch, and unmerged PR closures do not start build jobs.
