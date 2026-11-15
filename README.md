@@ -1,8 +1,8 @@
 # Watch Dial Pattern Generator
 
-Current version: **1.4.0**. See [release notes](RELEASE-NOTES.md) for changes.
+Current version: **1.5.0**. See [release notes](RELEASE-NOTES.md) for changes.
 
-A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 29 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
+A mathematical grayscale height-map generator for watch dials. Supports a Tkinter desktop GUI and CLI, 31 pattern families, pattern-specific GUI settings, and 8/16-bit PNG plus JSON metadata exports. No artificial lighting is applied to engraving exports.
 
 ## Donate/Sponsor
 
@@ -143,7 +143,37 @@ python3 dial_patterns.py --help
 
 To see all available options for the CLI, use the `-h` or `--help` command line parameter.
 
-Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `spirograph`, `sectorrings`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, `dimples`, `ingenieur`, and `interlockingy`.
+Available patterns: `hobnail`, `barleycorn`, `sunburst`, `basketweave`, `tapisserie`, `fishscales`, `flinque`, `wave`, `horizontalribbing`, `annularwave`, `graindorge`, `flamme`, `panier`, `escargot`, `moire`, `chevron`, `rosette`, `spirograph`, `sectorrings`, `radialchecker`, `turbine`, `honeycomb`, `perlage`, `diamondlattice`, `isometriccubes`, `fanscallop`, `asanoha`, `brick`, `dimples`, `ingenieur`, and `interlockingy`.
+
+**Radial Checkerboard** alternates raised and recessed checks around an open center.
+The default has 8 rings and 48 angular sectors. **Checker outward ring growth**
+sets the width multiplier from one row to the next: 1 gives equal widths; 1.25
+makes the checks grow outward. Sector count must be even to close seamlessly.
+
+**Turbine** joins concentric circular ribs with curved vanes. The default has
+3 bands with 12, 24, and 48 vanes. **Segments** sets the innermost vane count;
+each outer band doubles it. Successive bands bow in opposite directions:
+clockwise, counterclockwise, then clockwise. **Turbine vane bend** controls
+curvature; zero gives straight spokes and negative values reverse all bands. Rib and bevel widths
+set actual relief geometry, with flat tops and sloped edges.
+
+Both patterns expose **Bevel width (mm)** for a gradual grayscale transition
+between black and white edges. Try 0.03–0.08 mm for a subtle transition or 0 for
+sharp edges. These gray values encode actual sloped relief. Wider checker bevels
+can soften small checks enough to reduce their peak height; turbine bevels must
+fit within half the rib width.
+
+Both patterns use **Radial center opening radius** to set the recessed center
+and end at half the area width. Rotation, pattern offset, inversion, circular
+masking, exclusion zones, and the enlarged/3D inspector are supported. White
+features are raised by default; use **Invert** for recessed features or to match
+the black motifs on a white background in a reference image. These are height
+maps, with no simulated lighting.
+
+```bash
+python3 dial_patterns.py --cli --pattern radialchecker --checker-rings 8 --checker-sectors 48 --checker-growth 1.25 --output radial_checker.png
+python3 dial_patterns.py --cli --pattern turbine --radial-inner-radius-mm 1.5 --turbine-rings 3 --segments 12 --turbine-twist 0.65 --turbine-line-width-mm 0.45 --output turbine.png
+```
 
 **Interlocking Y Blocks** repeats staggered Y-shaped blocks with three bent faces.
 The faces sit at three actual relief levels: full height, one step lower, and two

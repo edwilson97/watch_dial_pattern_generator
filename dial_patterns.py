@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image, ImageTk
 from exclusion_zones import apply_zones, validate_zones
 
-__version__ = '1.4.0'
+__version__ = '1.5.0'
 
 PATTERNS = {
     'hobnail': 'Clous de Paris / Hobnail',
@@ -35,6 +35,8 @@ PATTERNS = {
     'rosette': 'Rosette (radial petals)',
     'spirograph': 'Spirograph',
     'sectorrings': 'Sector Rings (segmented annuli)',
+    'radialchecker': 'Radial Checkerboard',
+    'turbine': 'Turbine (concentric curved vanes)',
     'honeycomb': 'Honeycomb (hexagonal cells)',
     'perlage': 'Perlage (circular graining)',
     'diamondlattice': 'Diamond Lattice',
@@ -451,6 +453,54 @@ def _spirograph_height(coord, fixed, rolling, offset, diameter_mm, width_mm, rot
     return 1 - np.sqrt(np.maximum(0, 1 - normalized**2))
 
 
+def _radial_checker_height(radius, theta, outer_radius, inner_radius, rings,
+                           sectors, growth, phase, bevel_width=0):
+    """Alternating annular sectors with geometrically increasing row widths."""
+    weights = growth ** np.arange(rings, dtype=np.float64)
+    edges = inner_radius + (outer_radius - inner_radius) * np.r_[0, np.cumsum(weights)] / weights.sum()
+    row = np.searchsorted(edges, radius, side='right') - 1
+    cycle = np.mod(theta / (2 * np.pi) * sectors + phase, sectors)
+    column = np.floor(cycle).astype(np.int32)
+    raised = (radius >= inner_radius) & (radius < outer_radius) & ((row + column) % 2 == 0)
+    if bevel_width == 0:
+        return raised.astype(np.float32)
+    # Physical distances to circular row edges and straight sector edges.
+    safe_row = np.clip(row, 0, rings - 1)
+    radial_distance = np.minimum(radius - edges[safe_row], edges[safe_row + 1] - radius)
+    fraction = cycle - column
+    angular_distance = radius * np.sin(np.minimum(fraction, 1 - fraction) * (2 * np.pi / sectors))
+    edge_distance = np.minimum(radial_distance, angular_distance)
+    return np.where(raised, np.clip(edge_distance / bevel_width, 0, 1), 0)
+
+
+def _turbine_height(radius, theta, outer_radius, inner_radius, rings, segments,
+                    twist, line_width, bevel_width, phase):
+    """Concentric ribs joined by alternating bowed vanes; outer bands double the count.
+
+    Distances are in mm, with flat rib tops and optional bevels. The angular
+    distance accounts for the local vane slope so curved ribs keep their width.
+    """
+    edges = np.linspace(inner_radius, outer_radius, rings + 1)
+    row = np.clip(np.searchsorted(edges, radius, side='right') - 1, 0, rings - 1)
+    span = (outer_radius - inner_radius) / rings
+    t = np.clip((radius - edges[row]) / span, 0, 1)
+    count = segments * 2.0 ** row
+    band_twist = np.where(row % 2 == 0, twist, -twist)
+    bend = band_twist * np.sin(np.pi * t)
+    cycle = theta / (2 * np.pi) * count - bend + phase
+    angular_distance = np.abs(np.mod(cycle + .5, 1) - .5) * (2 * np.pi / count)
+    slope = (2 * np.pi / count) * band_twist * np.pi * np.cos(np.pi * t) / span
+    vane_distance = radius * angular_distance / np.sqrt(1 + (radius * slope)**2)
+    ring_distance = np.minimum(np.abs(radius - edges[row]), np.abs(radius - edges[row + 1]))
+    # Keep the inner/outer outlines inside the design's annulus.
+    distance = np.minimum(vane_distance, ring_distance)
+    inset = np.minimum(radius - inner_radius, outer_radius - radius)
+    signed = np.minimum(line_width / 2 - distance, inset)
+    if bevel_width == 0:
+        return (signed >= 0).astype(np.float32)
+    return np.clip(signed / bevel_width, 0, 1)
+
+
 PATTERN_PITCH_DEFAULTS = {'hobnail': 1.0, 'ingenieur': 2.0, 'interlockingy': 2.0}
 
 
@@ -472,7 +522,10 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
            ingenieur_feature_width_mm=0.10, exclusion_zones=None,
            spirograph_fixed_teeth=30, spirograph_rolling_teeth=11,
            spirograph_pen_offset=1.55, spirograph_diameter_mm=26.0, spirograph_style='v_cut',
-           dimple_dome=0.0, dome=0.0, y_block_gap_mm=0.04, y_block_step_fraction=0.22):
+           dimple_dome=0.0, dome=0.0, y_block_gap_mm=0.04, y_block_step_fraction=0.22,
+           radial_inner_radius_mm=2.8, checker_rings=8, checker_sectors=48,
+           checker_growth=1.25, turbine_rings=3, turbine_twist=0.65,
+           turbine_line_width_mm=0.45):
     """Return uint16 height map and metadata. White = high, black = low.
 
     depth_mm is intended Z-range metadata, not a promise of laser engraving depth.
@@ -503,6 +556,33 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
         raise ValueError('secondary pitch must be positive, amplitude 0–2, segments >= 2')
     if grooves < 4:
         raise ValueError('grooves must be >= 4')
+    if pattern in ('radialchecker', 'turbine'):
+        if not math.isfinite(size_mm) or not 0 < radial_inner_radius_mm < size_mm / 2:
+            raise ValueError('Radial inner radius must be positive and smaller than half the area width')
+        if not math.isfinite(rotation) or not math.isfinite(phase):
+            raise ValueError('Radial rotation and offset must be finite')
+        if pattern == 'radialchecker':
+            counts = ((checker_rings, 1, 64), (checker_sectors, 4, 512))
+        else:
+            counts = ((turbine_rings, 1, 6), (segments, 2, 64))
+        for value, lower, upper in counts:
+            if not math.isfinite(value) or int(value) != value or not lower <= value <= upper:
+                raise ValueError(f'Radial counts must be whole numbers from {lower} to {upper}')
+        if pattern == 'radialchecker':
+            if not math.isfinite(bevel_width_mm) or bevel_width_mm < 0:
+                raise ValueError('Checker bevel width must be finite and nonnegative')
+            if checker_sectors % 2:
+                raise ValueError('Checker sectors must be even for a seamless circular repeat')
+            if not 1 <= checker_growth <= 2:
+                raise ValueError('Checker ring growth must be between 1 and 2')
+        else:
+            if not -2 <= turbine_twist <= 2:
+                raise ValueError('Turbine twist must be between -2 and 2')
+            band_width = (size_mm / 2 - radial_inner_radius_mm) / turbine_rings
+            if not 0 < turbine_line_width_mm < band_width:
+                raise ValueError('Turbine rib width must be positive and smaller than a radial band')
+            if not 0 <= bevel_width_mm <= turbine_line_width_mm / 2:
+                raise ValueError('Turbine bevel must fit within half the rib width')
     if pattern == 'spirograph':
         if spirograph_style not in ENUM_FIELDS['spirograph_style']:
             raise ValueError('Spirograph style must be v_cut or rounded')
@@ -720,6 +800,13 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
         modulation = (1 - rosette_harmonics) * petals + rosette_harmonics * secondary
         h = .5 + .5 * np.cos(tau * (rr / pitch_mm + amplitude * modulation))
         h = np.where(rr < size_mm / pixels, 0.5, h)
+    elif pattern == 'radialchecker':
+        h = _radial_checker_height(rr, theta - ang, size_mm / 2, radial_inner_radius_mm,
+                                   int(checker_rings), int(checker_sectors), checker_growth, phase, bevel_width_mm)
+    elif pattern == 'turbine':
+        h = _turbine_height(rr, theta - ang, size_mm / 2, radial_inner_radius_mm,
+                            int(turbine_rings), int(segments), turbine_twist,
+                            turbine_line_width_mm, bevel_width_mm, phase)
     elif pattern == 'sectorrings':
         rings = .5 + .5 * np.cos(tau * (rr / pitch_mm + phase))
         sector = .5 + .5 * np.cos(segments * theta)
@@ -789,6 +876,10 @@ def render(pattern='hobnail', size_mm=28.5, pixels=2048, pitch_mm=None,
                 spirograph_diameter_mm=spirograph_diameter_mm,
                 spirograph_style=spirograph_style,
                 exclusion_zones=exclusion_zones,
+                radial_inner_radius_mm=radial_inner_radius_mm,
+                checker_rings=checker_rings, checker_sectors=checker_sectors,
+                checker_growth=checker_growth, turbine_rings=turbine_rings,
+                turbine_twist=turbine_twist, turbine_line_width_mm=turbine_line_width_mm,
                 grayscale='white=highest; black=deepest',
                 pixel_pitch_mm=size_mm/pixels,
                 note='Depth is design metadata; calibrate laser material removal experimentally.')
@@ -837,6 +928,8 @@ PATTERN_FIELDS = {
                    'groove_width_mm', 'rotation'),
     'rosette': ('pitch_mm', 'grooves', 'phase', 'amplitude', 'rosette_harmonics'),
     'sectorrings': ('pitch_mm', 'segments', 'phase'),
+    'radialchecker': ('radial_inner_radius_mm', 'checker_rings', 'checker_sectors', 'checker_growth', 'bevel_width_mm', 'rotation', 'phase'),
+    'turbine': ('radial_inner_radius_mm', 'turbine_rings', 'segments', 'turbine_twist', 'turbine_line_width_mm', 'bevel_width_mm', 'rotation', 'phase'),
     'honeycomb': ('pitch_mm', 'rotation', 'softness'),
     'perlage': ('pitch_mm', 'rotation', 'phase', 'perlage_ring_pitch_mm', 'perlage_overlap'),
     'diamondlattice': ('pitch_mm', 'angle_deg', 'phase'),
@@ -853,6 +946,13 @@ for _pattern in DOME_PATTERNS:
     PATTERN_FIELDS[_pattern] += ('dome',)
 
 FIELD_SPECS = {
+    'radial_inner_radius_mm': ('Radial center opening radius (mm)', '2.8'),
+    'checker_rings': ('Checker ring count (1–64)', '8'),
+    'checker_sectors': ('Checker sectors (even, 4–512)', '48'),
+    'checker_growth': ('Checker outward ring growth (1–2)', '1.25'),
+    'turbine_rings': ('Turbine band count (1–6)', '3'),
+    'turbine_twist': ('Turbine vane bend (−2–2)', '0.65'),
+    'turbine_line_width_mm': ('Turbine rib width (mm)', '0.45'),
     'spirograph_style': ('Spirograph groove profile', 'v_cut'),
     'spirograph_fixed_teeth': ('Spirograph fixed gear teeth (3–96)', '30'),
     'spirograph_rolling_teeth': ('Spirograph rolling gear teeth', '11'),
@@ -907,6 +1007,8 @@ FIELD_SPECS = {
 # entries because their valid limits often depend on other fields.
 # Each tuple is (minimum, maximum, keyboard/drag increment).
 SLIDER_FIELDS = {
+    'checker_growth': (1, 2, .01),
+    'turbine_twist': (-2, 2, .01),
     'dome': (0, 1, .01),
     'softness': (0, 1, .01),
     'background': (0, 1, .01),
@@ -924,6 +1026,13 @@ SLIDER_FIELDS = {
 
 
 FIELD_TOOLTIPS = {
+    'radial_inner_radius_mm': 'Set the radius of the flat, recessed center in mm. Must be positive and smaller than half the area width. Both radial designs end at half the area width, even without Circular mask.',
+    'checker_rings': 'Set 1 to 64 concentric rows of alternating raised checks. The first row starts at the center opening.',
+    'checker_sectors': 'Set an even count from 4 to 512 for the angular columns, including raised and recessed checks. Even counts close seamlessly around the circle.',
+    'checker_growth': 'Set 1 for equally spaced rows. Values up to 2 make each outward row this many times wider than the previous row. All rows fit between the opening and the dial edge.',
+    'turbine_rings': 'Set 1 to 6 concentric bands of curved vanes. Each outer band has twice as many vanes as its inner neighbor.',
+    'turbine_twist': 'Set the sideways bow of each vane in angular repeats. Successive bands bow in opposite directions. Zero gives straight radial spokes; negative values reverse all bands. Rotation turns the complete design.',
+    'turbine_line_width_mm': 'Set the width of raised vanes and concentric ribs in mm, smaller than a radial band. Bevel width sets each edge slope and must not exceed half this width. Invert switches raised ribs to engraved channels.',
     'y_block_gap_mm': 'Set the recessed joint width in millimeters, from 0 to less than one eighth of Pattern pitch. Joints outline the Y blocks and separate their three faces, with short bevels along the edges. Pitch is horizontal center-to-center spacing; neighboring rows are staggered.',
     'y_block_step_fraction': 'Set the height difference between the three Y-block faces, greater than 0 and less than 0.5. Faces sit at full height, one step lower, and two steps lower. Target depth sets the total vertical range; all three faces are actual relief levels.',
     'dome': 'Set 0 for the regular flat layout, or increase toward 1 to wrap the pattern around a virtual dome. Rows curve and features compress radially toward the dial edge. Try 0.8 with Circular mask enabled. Feature dimensions describe the center; target depth still sets the relief range.',
@@ -944,7 +1053,7 @@ FIELD_TOOLTIPS = {
     'softness': 'Enter 0 to 1 to adjust the pattern shape. Higher values soften relief or add waviness, depending on the pattern.',
     'grooves': 'Enter a whole number of radial grooves or repeating features around the center, at least 4.',
     'groove_width_mm': 'Enter recessed channel width in millimeters. For Spirograph, use greater than 0 and smaller than its diameter. For lattice patterns, use smaller than pattern pitch. For Tapisserie, channels separate squares and 0 is allowed. For Horizontal Ribbing, use greater than 0; rib width equals pitch minus groove width, with vertical sides.',
-    'bevel_width_mm': 'Enter the width of each sloped square edge in millimeters. Use 0 for sharp edges; slopes must fit within half the raised square width.',
+    'bevel_width_mm': 'Enter each edge slope width in millimeters. Use 0 for sharp edges. Radial Checkerboard and Turbine use this width for grayscale transitions between black and white. Try 0.03–0.08 mm for subtle edges. For Tapisserie, slopes must fit within half the raised square width; for Turbine, within half the rib width. Large checker bevels can reduce the height of small checks.',
     'background': 'Set the height outside the circle: 0 is deepest (black), 1 is highest (white), and values between give intermediate heights.',
     'top_width_mm': 'Enter the flat top width of each hobnail in millimeters. Use 0 for pointed tops, or a value smaller than the pattern pitch.',
     'wave_meander_mm': 'Enter how far the waves bend sideways in millimeters. Use 0 for straight waves or a larger value for more bending.',
@@ -1157,6 +1266,7 @@ def run_gui():
             if k in ENUM_FIELDS:
                 kw[k] = values[k].get()
             elif k in ('pixels', 'grooves', 'segments', 'ingenieur_count',
+                        'checker_rings', 'checker_sectors', 'turbine_rings',
                         'spirograph_fixed_teeth', 'spirograph_rolling_teeth'):
                 kw[k] = int(values[k].get())
             else:
@@ -1308,7 +1418,7 @@ def main():
     parser.add_argument('--background', type=float, default=0)
     parser.add_argument('--groove-width-mm', type=float, default=0.20,
                         help='Recessed channel width for Tapisserie, Horizontal Ribbing, or Spirograph')
-    parser.add_argument('--bevel-width-mm', type=float, default=0.08, help='Tapisserie slope width on each square edge')
+    parser.add_argument('--bevel-width-mm', type=float, default=0.08, help='Edge grayscale ramp width for Tapisserie, Radial Checkerboard, and Turbine; 0 gives sharp edges')
     parser.add_argument('--top-width-mm', type=float, default=0)
     parser.add_argument('--wave-meander-mm', type=float, default=0)
     parser.add_argument('--ridge-height-fraction', type=float, default=1)
@@ -1351,6 +1461,14 @@ def main():
                         help='Interlocking Y joint width, nonnegative and smaller than pitch / 8')
     parser.add_argument('--y-block-step-fraction', type=float, default=.22,
                         help='Interlocking Y face height step, greater than 0 and less than 0.5')
+    parser.add_argument('--radial-inner-radius-mm', type=float, default=2.8,
+                        help='Recessed center radius for Radial Checkerboard and Turbine')
+    parser.add_argument('--checker-rings', type=int, default=8, help='Checker row count (1–64)')
+    parser.add_argument('--checker-sectors', type=int, default=48, help='Even angular checker count (4–512)')
+    parser.add_argument('--checker-growth', type=float, default=1.25, help='Outward checker row width multiplier (1–2)')
+    parser.add_argument('--turbine-rings', type=int, default=3, help='Turbine bands (1–6); --segments sets innermost vane count (2–64)')
+    parser.add_argument('--turbine-twist', type=float, default=.65, help='Alternating vane bend in repeats (-2–2); negative reverses all bands')
+    parser.add_argument('--turbine-line-width-mm', type=float, default=.45, help='Raised turbine rib width in mm')
     parser.add_argument('--output', default='watch_dial_heightmap.png')
     parser.add_argument('--ingenieur-count', type=int, default=3,
                         help='Ribs per line square and rows/columns per post square (1–12)')
